@@ -40,4 +40,5 @@ jobs:
           push: true
           tags: |
             docker.io/${{ secrets.LAURABOT_DOCKER_USERNAME }}/${{ steps.extract-repository-name.outputs.REPO_NAME }}:${{ steps.docker-image.outputs.IMAGE_NAME }}
+            docker.io/${{ secrets.LAURABOT_DOCKER_USERNAME }}/${{ steps.extract-repository-name.outputs.REPO_NAME }}:${{ github.run_number }}
             docker.io/${{ secrets.LAURABOT_DOCKER_USERNAME }}/${{ steps.extract-repository-name.outputs.REPO_NAME }}:latest
