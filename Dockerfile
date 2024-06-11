@@ -53,6 +53,8 @@ RUN find /opt/oracle/instantclient* -type d -exec chmod 755 {} \; && \
 # Configurar a variável de ambiente LD_LIBRARY_PATH diretamente, sem criar links simbólicos ou usar ldconfig
 ENV LD_LIBRARY_PATH=/opt/oracle/instantclient_21_13
 
+ENV N8N_DEFAULT_MODE=production
+
 ENV SHELL /bin/sh
 USER node
 ENTRYPOINT ["tini", "--", "/docker-entrypoint.sh"]
