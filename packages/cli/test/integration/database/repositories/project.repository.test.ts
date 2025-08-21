@@ -1,11 +1,9 @@
-import Container from 'typedi';
-import { createMember, createOwner } from '../../shared/db/users';
-import * as testDb from '../../shared/testDb';
-import { ProjectRepository } from '@/databases/repositories/project.repository';
+import { createTeamProject, testDb } from '@n8n/backend-test-utils';
+import { AuthIdentity, ProjectRepository, UserRepository } from '@n8n/db';
+import { Container } from '@n8n/di';
 import { EntityNotFoundError } from '@n8n/typeorm';
-import { createTeamProject } from '../../shared/db/projects';
-import { AuthIdentity } from '@/databases/entities/AuthIdentity';
-import { UserRepository } from '@/databases/repositories/user.repository';
+
+import { createMember, createOwner } from '../../shared/db/users';
 
 describe('ProjectRepository', () => {
 	beforeAll(async () => {
@@ -13,7 +11,7 @@ describe('ProjectRepository', () => {
 	});
 
 	beforeEach(async () => {
-		await testDb.truncate(['User', 'Workflow', 'Project']);
+		await testDb.truncate(['User', 'WorkflowEntity', 'Project']);
 	});
 
 	afterAll(async () => {

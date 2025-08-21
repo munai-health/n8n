@@ -1,6 +1,6 @@
-import { isTraversableObject } from '../../utils';
-import type { IDataObject, INode, JsonObject } from '@/Interfaces';
 import { ExecutionBaseError } from './execution-base.error';
+import type { IDataObject, INode, JsonObject } from '../../interfaces';
+import { isTraversableObject, jsonParse } from '../../utils';
 
 /**
  * Descriptive messages for common errors.
@@ -81,13 +81,20 @@ export abstract class NodeError extends ExecutionBaseError {
 		traversalKeys: string[] = [],
 	): string | null {
 		for (const key of potentialKeys) {
-			const value = jsonError[key];
+			let value = jsonError[key];
 			if (value) {
-				if (typeof value === 'string') return value;
+				if (typeof value === 'string') {
+					try {
+						value = jsonParse(value);
+					} catch (error) {
+						return value as string;
+					}
+					if (typeof value === 'string') return value;
+				}
 				if (typeof value === 'number') return value.toString();
 				if (Array.isArray(value)) {
 					const resolvedErrors: string[] = value
-						// eslint-disable-next-line @typescript-eslint/no-shadow
+
 						.map((jsonError) => {
 							if (typeof jsonError === 'string') return jsonError;
 							if (typeof jsonError === 'number') return jsonError.toString();
@@ -160,7 +167,7 @@ export abstract class NodeError extends ExecutionBaseError {
 		}
 
 		// if code is provided and it is in the list of common errors set the message and return early
-		if (code && COMMON_ERRORS[code.toUpperCase()]) {
+		if (code && typeof code === 'string' && COMMON_ERRORS[code.toUpperCase()]) {
 			newMessage = COMMON_ERRORS[code] as string;
 			messages.push(message);
 			return [newMessage, messages];

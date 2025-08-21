@@ -1,21 +1,23 @@
-import { WorkflowRepository } from '@/databases/repositories/workflow.repository';
-import { ActiveWorkflowManager } from '@/ActiveWorkflowManager';
-import { generateNanoId } from '@/databases/utils/generators';
-import type { WorkflowEntity } from '@/databases/entities/WorkflowEntity';
-import { OrchestrationService } from '@/services/orchestration.service';
-import { MultiMainSetup } from '@/services/orchestration/main/MultiMainSetup.ee';
+import { randomName, mockInstance } from '@n8n/backend-test-utils';
+import type { WorkflowEntity } from '@n8n/db';
+import { generateNanoId, WorkflowRepository } from '@n8n/db';
+import { Container } from '@n8n/di';
+import { InstanceSettings } from 'n8n-core';
 
-import { mockInstance } from '../shared/mocking';
-import { randomName } from './shared/random';
-import { setupTestServer } from './shared/utils';
+import { ActiveWorkflowManager } from '@/active-workflow-manager';
+import { MultiMainSetup } from '@/scaling/multi-main-setup.ee';
+
 import { createOwner } from './shared/db/users';
 import type { SuperAgentTest } from './shared/types';
+import { setupTestServer } from './shared/utils';
 
 describe('DebugController', () => {
 	const workflowRepository = mockInstance(WorkflowRepository);
 	const activeWorkflowManager = mockInstance(ActiveWorkflowManager);
+	const instanceSettings = Container.get(InstanceSettings);
+	instanceSettings.markAsLeader();
 
-	let testServer = setupTestServer({ endpointGroups: ['debug'] });
+	const testServer = setupTestServer({ endpointGroups: ['debug'] });
 	let ownerAgent: SuperAgentTest;
 
 	beforeAll(async () => {
@@ -30,7 +32,7 @@ describe('DebugController', () => {
 			const webhooks = [{ id: workflowId, name: randomName() }] as WorkflowEntity[];
 			const triggersAndPollers = [{ id: workflowId, name: randomName() }] as WorkflowEntity[];
 			const activationErrors = { [workflowId]: 'Failed to activate' };
-			const instanceId = 'main-71JdWtq306epIFki';
+			const { instanceId } = instanceSettings;
 			const leaderKey = 'some-leader-key';
 
 			workflowRepository.findIn.mockResolvedValue(triggersAndPollers);
@@ -38,9 +40,7 @@ describe('DebugController', () => {
 			activeWorkflowManager.allActiveInMemory.mockReturnValue([workflowId]);
 			activeWorkflowManager.getAllWorkflowActivationErrors.mockResolvedValue(activationErrors);
 
-			jest.spyOn(OrchestrationService.prototype, 'instanceId', 'get').mockReturnValue(instanceId);
 			jest.spyOn(MultiMainSetup.prototype, 'fetchLeaderKey').mockResolvedValue(leaderKey);
-			jest.spyOn(OrchestrationService.prototype, 'isLeader', 'get').mockReturnValue(true);
 
 			const response = await ownerAgent.get('/debug/multi-main-setup').expect(200);
 

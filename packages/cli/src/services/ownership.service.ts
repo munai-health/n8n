@@ -1,12 +1,13 @@
-import { Service } from 'typedi';
+import type { Project, User, ListQueryDb } from '@n8n/db';
+import {
+	ProjectRelationRepository,
+	ProjectRepository,
+	SharedWorkflowRepository,
+	UserRepository,
+} from '@n8n/db';
+import { Service } from '@n8n/di';
+
 import { CacheService } from '@/services/cache/cache.service';
-import { SharedWorkflowRepository } from '@db/repositories/sharedWorkflow.repository';
-import { UserRepository } from '@db/repositories/user.repository';
-import type { ListQuery } from '@/requests';
-import type { Project } from '@/databases/entities/Project';
-import { ProjectRepository } from '@/databases/repositories/project.repository';
-import type { User } from '@/databases/entities/User';
-import { ProjectRelationRepository } from '@/databases/repositories/projectRelation.repository';
 
 @Service()
 export class OwnershipService {
@@ -40,16 +41,13 @@ export class OwnershipService {
 	}
 
 	/**
-	 * Retrieve the user that owns the project, or null if it's not an ownable project. Note that project ownership is **immutable**.
+	 * Retrieve the user who owns the personal project, or `null` if non-personal project.
+	 * Personal project ownership is **immutable**.
 	 */
-	async getProjectOwnerCached(projectId: string): Promise<User | null> {
-		const cachedValue = await this.cacheService.getHashValue<User | null>(
-			'project-owner',
-			projectId,
-		);
+	async getPersonalProjectOwnerCached(projectId: string): Promise<User | null> {
+		const cachedValue = await this.cacheService.getHashValue<User>('project-owner', projectId);
 
-		if (cachedValue) this.userRepository.create(cachedValue);
-		if (cachedValue === null) return null;
+		if (cachedValue) return this.userRepository.create(cachedValue);
 
 		const ownerRel = await this.projectRelationRepository.getPersonalProjectOwners([projectId]);
 		const owner = ownerRel[0]?.user ?? null;
@@ -59,18 +57,20 @@ export class OwnershipService {
 	}
 
 	addOwnedByAndSharedWith(
-		rawWorkflow: ListQuery.Workflow.WithSharing,
-	): ListQuery.Workflow.WithOwnedByAndSharedWith;
+		rawWorkflow: ListQueryDb.Workflow.WithSharing,
+	): ListQueryDb.Workflow.WithOwnedByAndSharedWith;
 	addOwnedByAndSharedWith(
-		rawCredential: ListQuery.Credentials.WithSharing,
-	): ListQuery.Credentials.WithOwnedByAndSharedWith;
+		rawCredential: ListQueryDb.Credentials.WithSharing,
+	): ListQueryDb.Credentials.WithOwnedByAndSharedWith;
 	addOwnedByAndSharedWith(
-		rawEntity: ListQuery.Workflow.WithSharing | ListQuery.Credentials.WithSharing,
-	): ListQuery.Workflow.WithOwnedByAndSharedWith | ListQuery.Credentials.WithOwnedByAndSharedWith {
+		rawEntity: ListQueryDb.Workflow.WithSharing | ListQueryDb.Credentials.WithSharing,
+	):
+		| ListQueryDb.Workflow.WithOwnedByAndSharedWith
+		| ListQueryDb.Credentials.WithOwnedByAndSharedWith {
 		const shared = rawEntity.shared;
 		const entity = rawEntity as
-			| ListQuery.Workflow.WithOwnedByAndSharedWith
-			| ListQuery.Credentials.WithOwnedByAndSharedWith;
+			| ListQueryDb.Workflow.WithOwnedByAndSharedWith
+			| ListQueryDb.Credentials.WithOwnedByAndSharedWith;
 
 		Object.assign(entity, {
 			homeProject: null,
@@ -89,12 +89,14 @@ export class OwnershipService {
 					id: project.id,
 					type: project.type,
 					name: project.name,
+					icon: project.icon,
 				};
 			} else {
 				entity.sharedWithProjects.push({
 					id: project.id,
 					type: project.type,
 					name: project.name,
+					icon: project.icon,
 				});
 			}
 		}

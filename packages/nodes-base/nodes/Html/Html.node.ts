@@ -1,4 +1,5 @@
 import cheerio from 'cheerio';
+import get from 'lodash/get';
 import type {
 	INodeExecutionData,
 	IExecuteFunctions,
@@ -7,12 +8,13 @@ import type {
 	IDataObject,
 	INodeProperties,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
-import get from 'lodash/get';
-import { placeholder } from './placeholder';
-import { getValue } from './utils';
-import type { IValueData } from './types';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+
 import { getResolvables, sanitizeDataPathKey } from '@utils/utilities';
+
+import { placeholder } from './placeholder';
+import type { IValueData } from './types';
+import { getValue } from './utils';
 
 export const capitalizeHeader = (header: string, capitalize?: boolean) => {
 	if (!capitalize) return header;
@@ -133,8 +135,8 @@ export class Html implements INodeType {
 		defaults: {
 			name: 'HTML',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		parameterPane: 'wide',
 		properties: [
 			{
@@ -274,7 +276,7 @@ export class Html implements INodeType {
 				displayName: 'Options',
 				name: 'options',
 				type: 'collection',
-				placeholder: 'Add Option',
+				placeholder: 'Add option',
 				default: {},
 				displayOptions: {
 					show: {
@@ -296,7 +298,7 @@ export class Html implements INodeType {
 						type: 'boolean',
 						default: true,
 						description:
-							'Whether to remove remove leading and trailing whitespaces, line breaks (newlines) and condense multiple consecutive whitespaces into a single space',
+							'Whether to remove leading and trailing whitespaces, line breaks (newlines) and condense multiple consecutive whitespaces into a single space',
 					},
 				],
 			},
@@ -307,7 +309,7 @@ export class Html implements INodeType {
 				displayName: 'Options',
 				name: 'options',
 				type: 'collection',
-				placeholder: 'Add Option',
+				placeholder: 'Add option',
 				default: {},
 				displayOptions: {
 					show: {
@@ -588,7 +590,7 @@ export class Html implements INodeType {
 					}
 				}
 			} catch (error) {
-				if (this.continueOnFail(error)) {
+				if (this.continueOnFail()) {
 					returnData.push({
 						json: {
 							error: error.message,

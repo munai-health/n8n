@@ -1,32 +1,36 @@
-import { Container } from 'typedi';
-import { v4 as uuid } from 'uuid';
+import {
+	createTeamProject,
+	findProject,
+	getPersonalProject,
+	mockInstance,
+	createWorkflow,
+	randomCredentialPayload,
+} from '@n8n/backend-test-utils';
+import {
+	CredentialsRepository,
+	SharedCredentialsRepository,
+	SharedWorkflowRepository,
+	WorkflowRepository,
+} from '@n8n/db';
+import { Container } from '@n8n/di';
 import { EntityNotFoundError } from '@n8n/typeorm';
+import { v4 as uuid } from 'uuid';
 
 import { Reset } from '@/commands/ldap/reset';
-import { LoadNodesAndCredentials } from '@/LoadNodesAndCredentials';
-import { InternalHooks } from '@/InternalHooks';
-import { WorkflowRepository } from '@db/repositories/workflow.repository';
-import { CredentialsRepository } from '@db/repositories/credentials.repository';
-import { SharedWorkflowRepository } from '@db/repositories/sharedWorkflow.repository';
-import { SharedCredentialsRepository } from '@db/repositories/sharedCredentials.repository';
-import { getLdapSynchronizations, saveLdapSynchronization } from '@/Ldap/helpers';
-import { LdapService } from '@/Ldap/ldap.service';
+import { getLdapSynchronizations, saveLdapSynchronization } from '@/ldap.ee/helpers.ee';
+import { LdapService } from '@/ldap.ee/ldap.service.ee';
+import { LoadNodesAndCredentials } from '@/load-nodes-and-credentials';
 import { Push } from '@/push';
 import { Telemetry } from '@/telemetry';
+import { setupTestCommand } from '@test-integration/utils/test-command';
 
-import { setupTestCommand } from '@test-integration/utils/testCommand';
-import { mockInstance } from '../../../shared/mocking';
-import { createLdapUser, createMember, getUserById } from '../../shared/db/users';
-import { createWorkflow } from '../../shared/db/workflows';
-import { randomCredentialPayload } from '../../shared/random';
 import { saveCredential } from '../../shared/db/credentials';
+import { createLdapUser, createMember, getUserById } from '../../shared/db/users';
 import { createLdapConfig } from '../../shared/ldap';
-import { createTeamProject, findProject, getPersonalProject } from '../../shared/db/projects';
 
 mockInstance(Telemetry);
 
 mockInstance(Push);
-mockInstance(InternalHooks);
 mockInstance(LoadNodesAndCredentials);
 const command = setupTestCommand(Reset);
 

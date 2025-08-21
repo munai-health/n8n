@@ -1,6 +1,6 @@
-import type { INode } from '../Interfaces';
 import { ExecutionBaseError } from './abstract/execution-base.error';
-import type { ApplicationError } from './application.error';
+import type { ApplicationError } from '@n8n/errors';
+import type { INode } from '../interfaces';
 
 interface WorkflowActivationErrorOptions {
 	cause?: Error;

@@ -10,7 +10,9 @@ const workflowPage = new WorkflowPage();
 const ndv = new NDV();
 const executionsTab = new WorkflowExecutionsTab();
 
-describe('Debug', () => {
+// Migrated to Playwright
+// eslint-disable-next-line n8n-local-rules/no-skipped-tests
+describe.skip('Debug', () => {
 	beforeEach(() => {
 		cy.enableFeature('debugInEditor');
 	});
@@ -18,7 +20,7 @@ describe('Debug', () => {
 	it('should be able to debug executions', () => {
 		cy.intercept('GET', '/rest/executions?filter=*').as('getExecutions');
 		cy.intercept('GET', '/rest/executions/*').as('getExecution');
-		cy.intercept('POST', '/rest/workflows/**/run').as('postWorkflowRun');
+		cy.intercept('POST', '/rest/workflows/**/run?**').as('postWorkflowRun');
 
 		cy.signinAsOwner();
 
@@ -87,11 +89,14 @@ describe('Debug', () => {
 		confirmDialog.get('.btn--confirm').click();
 		cy.url().should('include', '/debug');
 
-		workflowPage.getters.canvasNodes().first().should('have.descendants', '.node-pin-data-icon');
+		workflowPage.getters
+			.canvasNodes()
+			.first()
+			.should('have.descendants', '[data-test-id="canvas-node-status-pinned"]');
 		workflowPage.getters
 			.canvasNodes()
 			.not(':first')
-			.should('not.have.descendants', '.node-pin-data-icon');
+			.should('not.have.descendants', '[data-test-id="canvas-node-status-pinned"]');
 
 		cy.reload(true);
 		cy.wait(['@getExecution']);
@@ -114,10 +119,11 @@ describe('Debug', () => {
 		confirmDialog.get('.btn--confirm').click();
 		cy.url().should('include', '/debug');
 
-		workflowPage.getters.canvasNodes().last().find('.node-info-icon').should('be.empty');
+		workflowPage.getters.canvasNodes().last().find('[class*="statusIcons"]').should('not.exist');
 
 		workflowPage.getters.canvasNodes().first().dblclick();
-		ndv.getters.pinDataButton().click();
+		ndv.actions.unPinData();
+
 		ndv.actions.close();
 
 		workflowPage.actions.saveWorkflowUsingKeyboardShortcut();

@@ -1,12 +1,18 @@
-import type { User } from '@db/entities/User';
-import { setSamlLoginEnabled } from '@/sso/saml/samlHelpers';
-import { getCurrentAuthenticationMethod, setCurrentAuthenticationMethod } from '@/sso/ssoHelpers';
+import { randomEmail, randomName, randomValidPassword } from '@n8n/backend-test-utils';
+import { GlobalConfig } from '@n8n/config';
+import type { User } from '@n8n/db';
+import { Container } from '@n8n/di';
 
-import { randomEmail, randomName, randomValidPassword } from '../shared/random';
-import * as utils from '../shared/utils/';
-import { sampleConfig } from './sampleMetadata';
+import { setSamlLoginEnabled } from '@/sso.ee/saml/saml-helpers';
+import {
+	getCurrentAuthenticationMethod,
+	setCurrentAuthenticationMethod,
+} from '@/sso.ee/sso-helpers';
+
+import { sampleConfig } from './sample-metadata';
 import { createOwner, createUser } from '../shared/db/users';
 import type { SuperAgentTest } from '../shared/types';
+import * as utils from '../shared/utils/';
 
 let someUser: User;
 let owner: User;
@@ -22,12 +28,17 @@ const testServer = utils.setupTestServer({
 	enabledFeatures: ['feat:saml'],
 });
 
+const memberPassword = randomValidPassword();
+
 beforeAll(async () => {
 	owner = await createOwner();
-	someUser = await createUser();
+	someUser = await createUser({ password: memberPassword });
 	authOwnerAgent = testServer.authAgentFor(owner);
 	authMemberAgent = testServer.authAgentFor(someUser);
+	Container.get(GlobalConfig).sso.saml.loginEnabled = true;
 });
+
+beforeEach(async () => await enableSaml(false));
 
 describe('Instance owner', () => {
 	describe('PATCH /me', () => {
@@ -60,10 +71,11 @@ describe('Instance owner', () => {
 	describe('PATCH /password', () => {
 		test('should throw BadRequestError if password is changed when SAML is enabled', async () => {
 			await enableSaml(true);
-			await authOwnerAgent
+			await authMemberAgent
 				.patch('/me/password')
 				.send({
-					password: randomValidPassword(),
+					currentPassword: memberPassword,
+					newPassword: randomValidPassword(),
 				})
 				.expect(400, {
 					code: 400,
@@ -82,6 +94,17 @@ describe('Instance owner', () => {
 				})
 				.expect(200);
 			expect(getCurrentAuthenticationMethod()).toBe('saml');
+		});
+
+		test('should return 400 on invalid config', async () => {
+			await authOwnerAgent
+				.post('/sso/saml/config')
+				.send({
+					...sampleConfig,
+					loginBinding: 'invalid',
+				})
+				.expect(400);
+			expect(getCurrentAuthenticationMethod()).toBe('email');
 		});
 	});
 

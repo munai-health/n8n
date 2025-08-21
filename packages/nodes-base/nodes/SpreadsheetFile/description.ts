@@ -102,7 +102,7 @@ export const toFileOptions: INodeProperties = {
 	displayName: 'Options',
 	name: 'options',
 	type: 'collection',
-	placeholder: 'Add Option',
+	placeholder: 'Add option',
 	default: {},
 	displayOptions: {
 		show: {
@@ -156,7 +156,7 @@ export const fromFileOptions: INodeProperties = {
 	displayName: 'Options',
 	name: 'options',
 	type: 'collection',
-	placeholder: 'Add Option',
+	placeholder: 'Add option',
 	default: {},
 	displayOptions: {
 		show: {
@@ -209,6 +209,19 @@ export const fromFileOptions: INodeProperties = {
 			default: false,
 			description:
 				'Whether to detect and exclude the byte-order-mark from the CSV Input if present',
+		},
+		{
+			displayName: 'Preserve Quotes',
+			name: 'relaxQuotes',
+			type: 'boolean',
+			displayOptions: {
+				show: {
+					'/fileFormat': ['csv'],
+				},
+			},
+			default: false,
+			description:
+				"Whether to handle unclosed quotes in CSV fields as part of the field's content instead of throwing a parsing error",
 		},
 		{
 			displayName: 'Header Row',

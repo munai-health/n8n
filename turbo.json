@@ -1,25 +1,49 @@
 {
-	"$schema": "https://turborepo.org/schema.json",
-	"pipeline": {
-		"clean": {
-			"cache": false
-		},
+	"globalEnv": ["CI", "COVERAGE_ENABLED"],
+	"tasks": {
+		"clean": { "cache": false },
 		"build": {
 			"dependsOn": ["^build"],
 			"outputs": ["dist/**"]
 		},
-		"typecheck": {},
-		"format": {},
-		"lint": {},
-		"lintfix": {},
-		"test": {},
-		"watch": {
-			"cache": false,
-			"persistent": true
+		"typecheck": {
+			"dependsOn": ["^typecheck", "^build"]
 		},
-		"dev": {
+		"format": {},
+		"format:check": {},
+		"lint": {
+			"dependsOn": ["^build", "@n8n/eslint-config#build"]
+		},
+		"lint:fix": {},
+		"lint:styles": {
+			"dependsOn": ["@n8n/stylelint-config#build"]
+		},
+		"lint:styles:fix": {
+			"dependsOn": ["@n8n/stylelint-config#build"]
+		},
+		"test": {
+			"dependsOn": ["^build", "build"],
+			"outputs": ["coverage/**", "*.xml"]
+		},
+		"watch": { "cache": false, "persistent": true },
+		"dev": { "cache": false, "persistent": true },
+		"build:playwright": {
+			"dependsOn": ["install-browsers:ci", "build"]
+		},
+		"install-browsers:ci": {
+			"cache": true,
+			"inputs": ["package.json"],
+			"outputs": ["ms-playwright-cache/**"],
+			"env": ["PLAYWRIGHT_BROWSERS_PATH"]
+		},
+		"install-browsers:local": {
 			"cache": false,
-			"persistent": true
+			"inputs": ["package.json"]
+		},
+		"test:container:standard": {
+			"dependsOn": ["install-browsers:local"],
+			"env": ["E2E_TESTS"],
+			"cache": false
 		}
 	}
 }

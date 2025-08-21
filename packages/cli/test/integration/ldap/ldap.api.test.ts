@@ -1,24 +1,30 @@
-import { Container } from 'typedi';
-import type { Entry as LdapUser } from 'ldapts';
+import {
+	randomEmail,
+	randomName,
+	uniqueId,
+	getPersonalProject,
+	testDb,
+} from '@n8n/backend-test-utils';
+import { LDAP_DEFAULT_CONFIGURATION } from '@n8n/constants';
+import type { User } from '@n8n/db';
+import { AuthProviderSyncHistoryRepository, UserRepository } from '@n8n/db';
+import { Container } from '@n8n/di';
 import { Not } from '@n8n/typeorm';
+import type { Entry as LdapUser } from 'ldapts';
 import { Cipher } from 'n8n-core';
 
 import config from '@/config';
-import type { User } from '@db/entities/User';
-import { UserRepository } from '@db/repositories/user.repository';
-import { AuthProviderSyncHistoryRepository } from '@db/repositories/authProviderSyncHistory.repository';
-import { LDAP_DEFAULT_CONFIGURATION } from '@/Ldap/constants';
-import { LdapService } from '@/Ldap/ldap.service';
-import { saveLdapSynchronization } from '@/Ldap/helpers';
-import { getCurrentAuthenticationMethod, setCurrentAuthenticationMethod } from '@/sso/ssoHelpers';
+import { saveLdapSynchronization } from '@/ldap.ee/helpers.ee';
+import { LdapService } from '@/ldap.ee/ldap.service.ee';
+import {
+	getCurrentAuthenticationMethod,
+	setCurrentAuthenticationMethod,
+} from '@/sso.ee/sso-helpers';
 
-import { randomEmail, randomName, uniqueId } from './../shared/random';
-import * as testDb from './../shared/testDb';
-import * as utils from '../shared/utils/';
 import { createLdapUser, createUser, getAllUsers, getLdapIdentities } from '../shared/db/users';
-import { getPersonalProject } from '../shared/db/projects';
 import { createLdapConfig, defaultLdapConfig } from '../shared/ldap';
 import type { SuperAgentTest } from '../shared/types';
+import * as utils from '../shared/utils/';
 
 jest.mock('@/telemetry');
 
@@ -44,9 +50,9 @@ beforeEach(async () => {
 		'AuthIdentity',
 		'AuthProviderSyncHistory',
 		'SharedCredentials',
-		'Credentials',
+		'CredentialsEntity',
 		'SharedWorkflow',
-		'Workflow',
+		'WorkflowEntity',
 	]);
 
 	await Container.get(UserRepository).delete({ id: Not(owner.id) });
@@ -467,7 +473,7 @@ describe('POST /login', () => {
 
 		const response = await testServer.authlessAgent
 			.post('/login')
-			.send({ email: ldapUser.mail, password: 'password' });
+			.send({ emailOrLdapLoginId: ldapUser.mail, password: 'password' });
 
 		expect(response.statusCode).toBe(200);
 		expect(response.headers['set-cookie']).toBeDefined();
@@ -526,7 +532,7 @@ describe('POST /login', () => {
 
 		const response = await testServer.authlessAgent
 			.post('/login')
-			.send({ email: owner.email, password: 'password' });
+			.send({ emailOrLdapLoginId: owner.email, password: 'password' });
 
 		expect(response.status).toBe(200);
 		expect(response.body.data?.signInType).toBeDefined();

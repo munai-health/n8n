@@ -4,9 +4,8 @@ import type {
 	INodeExecutionData,
 	INodeProperties,
 } from 'n8n-workflow';
-import { updateDisplayOptions } from '../../../../../utils/utilities';
-import { discordApiMultiPartRequest, discordApiRequest } from '../../transport';
 
+import { updateDisplayOptions } from '../../../../../utils/utilities';
 import {
 	parseDiscordError,
 	prepareEmbeds,
@@ -14,7 +13,7 @@ import {
 	prepareMultiPartForm,
 	prepareOptions,
 } from '../../helpers/utils';
-
+import { discordApiMultiPartRequest, discordApiRequest } from '../../transport';
 import { embedsFixedCollection, filesFixedCollection } from '../common.description';
 
 const properties: INodeProperties[] = [
@@ -33,7 +32,7 @@ const properties: INodeProperties[] = [
 		displayName: 'Options',
 		name: 'options',
 		type: 'collection',
-		placeholder: 'Add Option',
+		placeholder: 'Add option',
 		default: {},
 		options: [
 			{
@@ -153,7 +152,7 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
 		} catch (error) {
 			const err = parseDiscordError.call(this, error, i);
 
-			if (this.continueOnFail(error)) {
+			if (this.continueOnFail()) {
 				returnData.push(...prepareErrorData.call(this, err, i));
 				continue;
 			}

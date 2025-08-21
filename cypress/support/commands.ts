@@ -1,7 +1,7 @@
 import 'cypress-real-events';
+import type { FrontendSettings, N8nEnvFeatFlags } from '@n8n/api-types';
 import FakeTimers from '@sinonjs/fake-timers';
-import type { IN8nUISettings } from 'n8n-workflow';
-import { WorkflowPage } from '../pages';
+
 import {
 	BACKEND_BASE_URL,
 	INSTANCE_ADMIN,
@@ -9,6 +9,7 @@ import {
 	INSTANCE_OWNER,
 	N8N_AUTH_COOKIE,
 } from '../constants';
+import { WorkflowPage } from '../pages';
 import { getUniqueWorkflowName } from '../utils/workflowUtils';
 
 Cypress.Commands.add('setAppDate', (targetDate: number | Date) => {
@@ -59,14 +60,18 @@ Cypress.Commands.add('waitForLoad', (waitForIntercepts = true) => {
 
 Cypress.Commands.add('signin', ({ email, password }) => {
 	void Cypress.session.clearAllSavedSessions();
-	cy.session([email, password], () =>
-		cy.request({
-			method: 'POST',
-			url: `${BACKEND_BASE_URL}/rest/login`,
-			body: { email, password },
-			failOnStatusCode: false,
-		}),
-	);
+	cy.session([email, password], () => {
+		return cy
+			.request({
+				method: 'POST',
+				url: `${BACKEND_BASE_URL}/rest/login`,
+				body: { emailOrLdapLoginId: email, password },
+				failOnStatusCode: false,
+			})
+			.then((response) => {
+				Cypress.env('currentUserId', response.body.data.id);
+			});
+	});
 });
 
 Cypress.Commands.add('signinAsOwner', () => cy.signin(INSTANCE_OWNER));
@@ -82,8 +87,8 @@ Cypress.Commands.add('signout', () => {
 	cy.getCookie(N8N_AUTH_COOKIE).should('not.exist');
 });
 
-export let settings: Partial<IN8nUISettings>;
-Cypress.Commands.add('overrideSettings', (value: Partial<IN8nUISettings>) => {
+export let settings: Partial<FrontendSettings>;
+Cypress.Commands.add('overrideSettings', (value: Partial<FrontendSettings>) => {
 	settings = value;
 });
 
@@ -109,6 +114,25 @@ Cypress.Commands.add('changeQuota', (feature: string, value: number) => setQuota
 Cypress.Commands.add('disableFeature', (feature: string) => setFeature(feature, false));
 Cypress.Commands.add('enableQueueMode', () => setQueueMode(true));
 Cypress.Commands.add('disableQueueMode', () => setQueueMode(false));
+
+const setEnvFeatureFlags = (flags: N8nEnvFeatFlags) =>
+	cy.request('PATCH', `${BACKEND_BASE_URL}/rest/e2e/env-feature-flags`, {
+		flags,
+	});
+
+const getEnvFeatureFlags = () =>
+	cy.request('GET', `${BACKEND_BASE_URL}/rest/e2e/env-feature-flags`);
+
+// Environment feature flags commands (using E2E API)
+Cypress.Commands.add('setEnvFeatureFlags', (flags: N8nEnvFeatFlags) =>
+	setEnvFeatureFlags(flags).then((response) => response.body.data),
+);
+Cypress.Commands.add('clearEnvFeatureFlags', () =>
+	setEnvFeatureFlags({}).then((response) => response.body.data),
+);
+Cypress.Commands.add('getEnvFeatureFlags', () =>
+	getEnvFeatureFlags().then((response) => response.body.data),
+);
 
 Cypress.Commands.add('grantBrowserPermissions', (...permissions: string[]) => {
 	if (Cypress.isBrowser('chrome')) {
@@ -154,6 +178,7 @@ Cypress.Commands.add('drag', (selector, pos, options) => {
 		};
 		if (options?.realMouse) {
 			element.realMouseDown();
+			element.realMouseMove(0, 0);
 			element.realMouseMove(newPosition.x, newPosition.y);
 			element.realMouseUp();
 		} else {
@@ -164,6 +189,16 @@ Cypress.Commands.add('drag', (selector, pos, options) => {
 				pageY: newPosition.y,
 				force: true,
 			});
+			if (options?.moveTwice) {
+				// first move like hover to trigger object to be visible
+				// like in main panel in ndv
+				element.trigger('mousemove', {
+					which: 1,
+					pageX: newPosition.x,
+					pageY: newPosition.y,
+					force: true,
+				});
+			}
 			if (options?.clickToFinish) {
 				// Click to finish the drag
 				// For some reason, mouseup isn't working when moving nodes
@@ -175,7 +210,7 @@ Cypress.Commands.add('drag', (selector, pos, options) => {
 	});
 });
 
-Cypress.Commands.add('draganddrop', (draggableSelector, droppableSelector) => {
+Cypress.Commands.add('draganddrop', (draggableSelector, droppableSelector, options) => {
 	if (draggableSelector) {
 		cy.get(draggableSelector).should('exist');
 	}
@@ -190,14 +225,13 @@ Cypress.Commands.add('draganddrop', (draggableSelector, droppableSelector) => {
 			const pageY = coords.top + coords.height / 2;
 
 			if (draggableSelector) {
-				// We can't use realMouseDown here because it hangs headless run
-				cy.get(draggableSelector).trigger('mousedown');
+				cy.get(draggableSelector).realMouseDown();
 			}
 			// We don't chain these commands to make sure cy.get is re-trying correctly
 			cy.get(droppableSelector).realMouseMove(0, 0);
 			cy.get(droppableSelector).realMouseMove(pageX, pageY);
 			cy.get(droppableSelector).realHover();
-			cy.get(droppableSelector).realMouseUp();
+			cy.get(droppableSelector).realMouseUp({ position: options?.position ?? 'top' });
 			if (draggableSelector) {
 				cy.get(draggableSelector).realMouseUp();
 			}
@@ -224,4 +258,70 @@ Cypress.Commands.add('resetDatabase', () => {
 		members: INSTANCE_MEMBERS,
 		admin: INSTANCE_ADMIN,
 	});
+});
+
+Cypress.Commands.add('clearIndexedDB', (dbName: string, storeName?: string) => {
+	cy.window().then((win) => {
+		return new Promise<void>((resolve, reject) => {
+			if (!win.indexedDB) {
+				resolve();
+				return;
+			}
+
+			// If storeName is provided, clear specific store; otherwise delete entire database
+			if (storeName) {
+				const openRequest = win.indexedDB.open(dbName);
+
+				openRequest.onsuccess = () => {
+					const db = openRequest.result;
+
+					if (!db.objectStoreNames.contains(storeName)) {
+						db.close();
+						resolve();
+						return;
+					}
+
+					const transaction = db.transaction([storeName], 'readwrite');
+					const store = transaction.objectStore(storeName);
+					const clearRequest = store.clear();
+
+					clearRequest.onsuccess = () => {
+						db.close();
+						resolve();
+					};
+
+					clearRequest.onerror = () => {
+						db.close();
+						// eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+						reject(clearRequest.error);
+					};
+				};
+
+				openRequest.onerror = () => {
+					resolve(); // Database doesn't exist, nothing to clear
+				};
+			} else {
+				const deleteRequest = win.indexedDB.deleteDatabase(dbName);
+
+				deleteRequest.onsuccess = () => resolve();
+				deleteRequest.onerror = () => resolve(); // Ignore errors if DB doesn't exist
+				deleteRequest.onblocked = () => resolve(); // Ignore if blocked
+			}
+		});
+	});
+});
+
+Cypress.Commands.add('interceptNewTab', () => {
+	cy.window().then((win) => {
+		cy.stub(win, 'open').as('windowOpen');
+	});
+});
+
+Cypress.Commands.add('visitInterceptedTab', () => {
+	cy.get('@windowOpen')
+		.should('have.been.called')
+		.then((stub: any) => {
+			const url = stub.firstCall.args[0];
+			cy.visit(url);
+		});
 });

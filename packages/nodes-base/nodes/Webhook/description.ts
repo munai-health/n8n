@@ -1,4 +1,5 @@
 import type { INodeProperties, INodeTypeDescription, IWebhookDescription } from 'n8n-workflow';
+
 import { getResponseCode, getResponseData } from './utils';
 
 export const defaultWebhookDescription: IWebhookDescription = {
@@ -124,29 +125,57 @@ export const responseCodeProperty: INodeProperties = {
 	description: 'The HTTP Response code to return',
 };
 
+const responseModeOptions = [
+	{
+		name: 'Immediately',
+		value: 'onReceived',
+		description: 'As soon as this node executes',
+	},
+	{
+		name: 'When Last Node Finishes',
+		value: 'lastNode',
+		description: 'Returns data of the last-executed node',
+	},
+	{
+		name: "Using 'Respond to Webhook' Node",
+		value: 'responseNode',
+		description: 'Response defined in that node',
+	},
+];
+
 export const responseModeProperty: INodeProperties = {
 	displayName: 'Respond',
 	name: 'responseMode',
 	type: 'options',
+	options: responseModeOptions,
+	default: 'onReceived',
+	description: 'When and how to respond to the webhook',
+	displayOptions: {
+		show: {
+			'@version': [1, 1.1, 2],
+		},
+	},
+};
+
+export const responseModePropertyStreaming: INodeProperties = {
+	displayName: 'Respond',
+	name: 'responseMode',
+	type: 'options',
 	options: [
+		...responseModeOptions,
 		{
-			name: 'Immediately',
-			value: 'onReceived',
-			description: 'As soon as this node executes',
-		},
-		{
-			name: 'When Last Node Finishes',
-			value: 'lastNode',
-			description: 'Returns data of the last-executed node',
-		},
-		{
-			name: "Using 'Respond to Webhook' Node",
-			value: 'responseNode',
-			description: 'Response defined in that node',
+			name: 'Streaming',
+			value: 'streaming',
+			description: 'Returns data in real time from streaming enabled nodes',
 		},
 	],
 	default: 'onReceived',
 	description: 'When and how to respond to the webhook',
+	displayOptions: {
+		hide: {
+			'@version': [1, 1.1, 2],
+		},
+	},
 };
 
 export const responseDataProperty: INodeProperties = {
@@ -205,7 +234,7 @@ export const optionsProperty: INodeProperties = {
 	displayName: 'Options',
 	name: 'options',
 	type: 'collection',
-	placeholder: 'Add Option',
+	placeholder: 'Add option',
 	default: {},
 	options: [
 		{
@@ -237,7 +266,7 @@ export const optionsProperty: INodeProperties = {
 				'If the data gets received via "Form-Data Multipart" it will be the prefix and a number starting with 0 will be attached to it',
 		},
 		{
-			displayName: 'Binary Property',
+			displayName: 'Field Name for Binary Data',
 			name: 'binaryPropertyName',
 			type: 'string',
 			default: 'data',
@@ -247,7 +276,7 @@ export const optionsProperty: INodeProperties = {
 				},
 			},
 			description:
-				'Name of the binary property to write the data of the received file to, only relevant if binary data is received',
+				'The name of the output field to put any binary file data in. Only relevant if binary data is received.',
 		},
 		{
 			displayName: 'Ignore Bots',

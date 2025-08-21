@@ -1,8 +1,8 @@
 /* eslint-disable n8n-nodes-base/node-filename-against-convention */
-import type { INodeTypeDescription } from 'n8n-workflow';
+import { NodeConnectionTypes, type INodeTypeDescription } from 'n8n-workflow';
 
-import * as record from './record/Record.resource';
 import * as base from './base/Base.resource';
+import * as record from './record/Record.resource';
 
 export const versionDescription: INodeTypeDescription = {
 	displayName: 'Airtable',
@@ -15,8 +15,8 @@ export const versionDescription: INodeTypeDescription = {
 	defaults: {
 		name: 'Airtable',
 	},
-	inputs: ['main'],
-	outputs: ['main'],
+	inputs: [NodeConnectionTypes.Main],
+	outputs: [NodeConnectionTypes.Main],
 	credentials: [
 		{
 			name: 'airtableTokenApi',

@@ -1,13 +1,10 @@
 {
-	"extends": "../../tsconfig.json",
+	"extends": "@n8n/typescript-config/modern/tsconfig.json",
 	"compilerOptions": {
 		"rootDir": ".",
-		"baseUrl": "src",
-		"paths": {
-			"@/*": ["./*"]
-		},
-		"lib": ["es2020", "es2022.error", "dom"],
-		"tsBuildInfoFile": "dist/typecheck.tsbuildinfo"
+		"noUncheckedIndexedAccess": false,
+		"types": ["vite/client", "vitest/globals"]
 	},
-	"include": ["src/**/*.ts", "test/**/*.ts"]
+	"include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"],
+	"exclude": ["node_modules"]
 }

@@ -1,8 +1,10 @@
 import type { INodeProperties, IExecuteFunctions, IDataObject } from 'n8n-workflow';
+
+import { updateDisplayOptions } from '@utils/utilities';
+
+import { chatRLC } from '../../descriptions';
 import { prepareMessage } from '../../helpers/utils';
 import { microsoftApiRequest } from '../../transport';
-import { chatRLC } from '../../descriptions';
-import { updateDisplayOptions } from '@utils/utilities';
 
 const properties: INodeProperties[] = [
 	chatRLC,
@@ -41,7 +43,7 @@ const properties: INodeProperties[] = [
 		type: 'collection',
 		default: {},
 		description: 'Other options to set',
-		placeholder: 'Add options',
+		placeholder: 'Add option',
 		options: [
 			{
 				displayName: 'Include Link to Workflow',
