@@ -1,0 +1,28 @@
+---
+name: Validar a versão
+'on':
+  pull_request:
+    branches:
+      - master
+      - release
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Get latest version
+        id: get_latest_version
+        uses: rez0n/actions-github-release@main
+        env:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          type: stable
+      - name: Set newer version
+        run: echo "VERSION=$(cat VERSION)" >> $GITHUB_ENV
+      - name: Ver versao atual
+        run: echo ${{steps.get_latest_version.outputs.release}}
+      - name: Ver nova versao
+        run: echo ${{env.VERSION}}
+      - name: Assert
+        if: ${{ env.VERSION == steps.get_latest_version.outputs.release }}
+        run: echo A nova versão deve ser diferente da atual && exit 1
