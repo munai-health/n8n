@@ -1,4 +1,4 @@
-ARG NODE_VERSION=20
+ARG NODE_VERSION=18
 
 # 1. Create an image to build n8n
 FROM --platform=linux/amd64 n8nio/base:${NODE_VERSION} as builder
@@ -6,14 +6,7 @@ FROM --platform=linux/amd64 n8nio/base:${NODE_VERSION} as builder
 # Build the application from source
 WORKDIR /src
 COPY . /src
-
-# Instala pnpm globalmente (mais previsível que corepack)
-RUN npm install -g pnpm@9.12.3
-
-RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    --mount=type=cache,id=pnpm-metadata,target=/root/.cache/pnpm/metadata \
-    pnpm install --frozen-lockfile
-
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store --mount=type=cache,id=pnpm-metadata,target=/root/.cache/pnpm/metadata pnpm install --frozen-lockfile
 RUN pnpm build
 
 # Delete all dev dependencies
@@ -39,7 +32,6 @@ COPY --from=builder /compiled /usr/local/lib/node_modules/n8n
 COPY docker/images/n8n/docker-entrypoint.sh /
 
 RUN \
-    npm install -g pnpm@9.12.3 && \
     pnpm rebuild --dir /usr/local/lib/node_modules/n8n sqlite3 && \
     ln -s /usr/local/lib/node_modules/n8n/bin/n8n /usr/local/bin/n8n && \
     mkdir .n8n && \
