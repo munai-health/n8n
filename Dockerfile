@@ -7,8 +7,8 @@ FROM --platform=linux/amd64 n8nio/base:${NODE_VERSION} as builder
 WORKDIR /src
 COPY . /src
 
-# Corrige problema com corepack/pnpm (bug de verificação de assinatura)
-RUN corepack prepare pnpm@9.12.3 --activate
+# Instala pnpm globalmente (mais previsível que corepack)
+RUN npm install -g pnpm@9.12.3
 
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     --mount=type=cache,id=pnpm-metadata,target=/root/.cache/pnpm/metadata \
@@ -39,6 +39,7 @@ COPY --from=builder /compiled /usr/local/lib/node_modules/n8n
 COPY docker/images/n8n/docker-entrypoint.sh /
 
 RUN \
+    npm install -g pnpm@9.12.3 && \
     pnpm rebuild --dir /usr/local/lib/node_modules/n8n sqlite3 && \
     ln -s /usr/local/lib/node_modules/n8n/bin/n8n /usr/local/bin/n8n && \
     mkdir .n8n && \
