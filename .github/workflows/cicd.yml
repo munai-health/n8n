@@ -1,0 +1,54 @@
+---
+name: Tests, SonarQube Scan, Image Build & Push, Helm Files
+'on':
+  push:
+    branches:
+      - master
+      - main
+      - releases/**
+      - release/**
+      - develop
+      - feature/**
+      - feat/**
+      - fix/**
+      - hotfix/**
+    paths-ignore:
+      - docs/**
+      - migration-db/**
+  create:
+    branches:
+      - feature/**
+      - feat/**
+      - hotfix/**
+      - release/**
+jobs:
+  generate:
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set newer version
+        run: echo "VERSION=$(cat VERSION)" >> $GITHUB_ENV
+      - name: Release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          automatic_release_tag: ${{env.VERSION}}
+          prerelease: false
+          title: ${{env.VERSION}}
+  build-and-push:
+    uses: robo-laura/.actions/.github/workflows/app-helm-release.yaml@main
+    with:
+      os_version: ubuntu-latest
+      github_sha: ${{ github.sha }}
+      github_repository: ${{ github.repository }}
+      github_run_number: ${{ github.run_number }}
+      github_ref_name: ${{ github.ref_name }}
+      docker_context: .
+      docker_file_name: ./Dockerfile
+      helm_context: helm
+      helm_url_repository: ${{ vars.helm_url_repository }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.LAURABOT_DOCKER_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.LAURABOT_DOCKER_PASSWORD }}
+      TOKEN_HELM_STORE: ${{ secrets.TOKEN_HELM_CENTRAL }}

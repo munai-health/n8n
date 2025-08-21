@@ -13,7 +13,14 @@ function runTests(options) {
 	process.env.N8N_USER_FOLDER = userFolder;
 	process.env.E2E_TESTS = 'true';
 	process.env.NODE_OPTIONS = '--dns-result-order=ipv4first';
-	process.env.VUE_APP_MAX_PINNED_DATA_SIZE = `${16 * 1024}`;
+
+	// Automatically pass through any N8N_ENV_FEAT_* environment variables
+	Object.keys(process.env).forEach((key) => {
+		if (key.startsWith('N8N_ENV_FEAT_')) {
+			// These are already in process.env and will be inherited by the spawned process
+			console.log(`Passing through environment feature flag: ${key}=${process.env[key]}`);
+		}
+	});
 
 	if (options.customEnv) {
 		Object.keys(options.customEnv).forEach((key) => {
@@ -22,7 +29,11 @@ function runTests(options) {
 	}
 
 	const cmd = `start-server-and-test ${options.startCommand} ${options.url} '${options.testCommand}'`;
-	const testProcess = spawn(cmd, [], { stdio: 'inherit', shell: true });
+	const testProcess = spawn(cmd, [], {
+		stdio: 'inherit',
+		shell: true,
+		env: process.env, // TODO: Maybe pass only the necessary environment variables instead of all
+	});
 
 	// Listen for termination signals to properly kill the test process
 	process.on('SIGINT', () => {
@@ -68,6 +79,30 @@ switch (scenario) {
 			testCommand: `cypress run --headless ${specParam}`,
 		});
 		break;
+	case 'debugFlaky': {
+		const filter = process.argv[3];
+		const burnCount = process.argv[4] || 5;
+
+		const envArgs = [`burn=${burnCount}`];
+
+		if (filter) {
+			envArgs.push(`grep=${filter}`);
+			envArgs.push(`grepFilterSpecs=true`);
+		}
+
+		const envString = envArgs.join(',');
+		const testCommand = `cypress run --headless --env "${envString}"`;
+
+		console.log(`Executing test command: ${testCommand}`);
+
+		runTests({
+			startCommand: 'start',
+			url: 'http://localhost:5678/favicon.ico',
+			testCommand: testCommand,
+			failFast: true,
+		});
+		break;
+	}
 	default:
 		console.error('Unknown scenario');
 		process.exit(1);

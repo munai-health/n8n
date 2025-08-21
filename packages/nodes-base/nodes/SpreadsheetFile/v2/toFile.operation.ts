@@ -1,9 +1,10 @@
 import type { IExecuteFunctions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
 
-import { toFileOptions, toFileProperties } from '../description';
-import { generatePairedItemData } from '@utils/utilities';
 import type { JsonToSpreadsheetBinaryFormat, JsonToSpreadsheetBinaryOptions } from '@utils/binary';
 import { convertJsonToSpreadsheetBinary } from '@utils/binary';
+import { generatePairedItemData } from '@utils/utilities';
+
+import { toFileOptions, toFileProperties } from '../description';
 
 export const description: INodeProperties[] = [...toFileProperties, toFileOptions];
 
@@ -29,7 +30,7 @@ export async function execute(this: IExecuteFunctions, items: INodeExecutionData
 
 		returnData.push(newItem);
 	} catch (error) {
-		if (this.continueOnFail(error)) {
+		if (this.continueOnFail()) {
 			returnData.push({
 				json: {
 					error: error.message,

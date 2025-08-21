@@ -1,25 +1,20 @@
-/* eslint-disable n8n-nodes-base/node-dirname-against-convention */
+import { DynamicTool } from '@langchain/core/tools';
 import type {
-	IExecuteFunctions,
 	INodeType,
 	INodeTypeDescription,
+	ISupplyDataFunctions,
 	SupplyData,
 	IHttpRequestMethods,
 	IHttpRequestOptions,
 } from 'n8n-workflow';
-import { NodeConnectionType, NodeOperationError, tryToParseAlphanumericString } from 'n8n-workflow';
-
-import { DynamicTool } from '@langchain/core/tools';
-import { getConnectionHintNoticeField } from '../../../utils/sharedFields';
-
 import {
-	configureHttpRequestFunction,
-	configureResponseOptimizer,
-	extractParametersFromText,
-	prepareToolDescription,
-	configureToolFunction,
-	updateParametersAndOptions,
-} from './utils';
+	NodeConnectionTypes,
+	NodeOperationError,
+	tryToParseAlphanumericString,
+} from 'n8n-workflow';
+
+import { N8nTool } from '@utils/N8nTool';
+import { getConnectionHintNoticeField } from '@utils/sharedFields';
 
 import {
 	authenticationProperties,
@@ -29,8 +24,16 @@ import {
 	placeholderDefinitionsCollection,
 	specifyBySelector,
 } from './descriptions';
-
 import type { PlaceholderDefinition, ToolParameter } from './interfaces';
+import {
+	configureHttpRequestFunction,
+	configureResponseOptimizer,
+	extractParametersFromText,
+	prepareToolDescription,
+	configureToolFunction,
+	updateParametersAndOptions,
+	makeToolInputSchema,
+} from './utils';
 
 export class ToolHttpRequest implements INodeType {
 	description: INodeTypeDescription = {
@@ -38,7 +41,7 @@ export class ToolHttpRequest implements INodeType {
 		name: 'toolHttpRequest',
 		icon: { light: 'file:httprequest.svg', dark: 'file:httprequest.dark.svg' },
 		group: ['output'],
-		version: 1,
+		version: [1, 1.1],
 		description: 'Makes an HTTP request and returns the response data',
 		subtitle: '={{ $parameter.toolDescription }}',
 		defaults: {
@@ -49,6 +52,7 @@ export class ToolHttpRequest implements INodeType {
 			categories: ['AI'],
 			subcategories: {
 				AI: ['Tools'],
+				Tools: ['Recommended Tools'],
 			},
 			resources: {
 				primaryDocumentation: [
@@ -58,13 +62,15 @@ export class ToolHttpRequest implements INodeType {
 				],
 			},
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
+		// Replaced by a `usableAsTool` version of the standalone HttpRequest node
+		hidden: true,
+
 		inputs: [],
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
-		outputs: [NodeConnectionType.AiTool],
+
+		outputs: [NodeConnectionTypes.AiTool],
 		outputNames: ['Tool'],
 		properties: [
-			getConnectionHintNoticeField([NodeConnectionType.AiAgent]),
+			getConnectionHintNoticeField([NodeConnectionTypes.AiAgent]),
 			{
 				displayName: 'Description',
 				name: 'toolDescription',
@@ -247,7 +253,7 @@ export class ToolHttpRequest implements INodeType {
 		],
 	};
 
-	async supplyData(this: IExecuteFunctions, itemIndex: number): Promise<SupplyData> {
+	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
 		const name = this.getNode().name.replace(/ /g, '_');
 		try {
 			tryToParseAlphanumericString(name);
@@ -272,8 +278,14 @@ export class ToolHttpRequest implements INodeType {
 			method: this.getNodeParameter('method', itemIndex, 'GET') as IHttpRequestMethods,
 			url: this.getNodeParameter('url', itemIndex) as string,
 			qs: {},
-			headers: {},
+			headers: {
+				// FIXME: This is a workaround to prevent the node from sending a default User-Agent (`n8n`) when the header is not set.
+				//  Needs to be replaced with a proper fix after NODE-1777 is resolved
+				'User-Agent': undefined,
+			},
 			body: {},
+			// We will need a full response object later to extract the headers and check the response's content type.
+			returnFullResponse: true,
 		};
 
 		const authentication = this.getNodeParameter('authentication', itemIndex, 'none') as
@@ -393,9 +405,24 @@ export class ToolHttpRequest implements INodeType {
 			optimizeResponse,
 		);
 
-		const description = prepareToolDescription(toolDescription, toolParameters);
+		let tool: DynamicTool | N8nTool;
 
-		const tool = new DynamicTool({ name, description, func });
+		// If the node version is 1.1 or higher, we use the N8nTool wrapper:
+		// it allows to use tool as a DynamicStructuredTool and have a fallback to DynamicTool
+		if (this.getNode().typeVersion >= 1.1) {
+			const schema = makeToolInputSchema(toolParameters);
+
+			tool = new N8nTool(this, {
+				name,
+				description: toolDescription,
+				func,
+				schema,
+			});
+		} else {
+			// Keep the old behavior for nodes with version 1.0
+			const description = prepareToolDescription(toolDescription, toolParameters);
+			tool = new DynamicTool({ name, description, func });
+		}
 
 		return {
 			response: tool,

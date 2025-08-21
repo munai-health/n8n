@@ -5,11 +5,11 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
-import { generatePairedItemData } from '../../utils/utilities';
 import type { IRecord } from './GenericFunction';
 import { apiRequest, apiRequestAllItems } from './GenericFunction';
+import { generatePairedItemData } from '../../utils/utilities';
 
 export class Stackby implements INodeType {
 	description: INodeTypeDescription = {
@@ -23,8 +23,9 @@ export class Stackby implements INodeType {
 		defaults: {
 			name: 'Stackby',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		usableAsTool: true,
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'stackbyApi',
@@ -192,7 +193,7 @@ export class Stackby implements INodeType {
 						responseData.map((data: any) => data.field) as INodeExecutionData[],
 					);
 				} catch (error) {
-					if (this.continueOnFail(error)) {
+					if (this.continueOnFail()) {
 						const executionErrorData = this.helpers.constructExecutionMetaData(
 							this.helpers.returnJsonArray({ error: error.message }),
 							{ itemData: { item: i } },
@@ -228,7 +229,7 @@ export class Stackby implements INodeType {
 
 					returnData.push(...executionData);
 				} catch (error) {
-					if (this.continueOnFail(error)) {
+					if (this.continueOnFail()) {
 						const executionErrorData = this.helpers.constructExecutionMetaData(
 							this.helpers.returnJsonArray({ error: error.message }),
 							{ itemData: { item: i } },
@@ -282,7 +283,7 @@ export class Stackby implements INodeType {
 					responseData.map((data: any) => data.field) as INodeExecutionData[],
 				);
 			} catch (error) {
-				if (this.continueOnFail(error)) {
+				if (this.continueOnFail()) {
 					const itemData = generatePairedItemData(items.length);
 					const executionErrorData = this.helpers.constructExecutionMetaData(
 						this.helpers.returnJsonArray({ error: error.message }),
@@ -332,7 +333,7 @@ export class Stackby implements INodeType {
 						responseData.map((data: any) => data.field) as INodeExecutionData[],
 					);
 				} catch (error) {
-					if (this.continueOnFail(error)) {
+					if (this.continueOnFail()) {
 						const executionErrorData = this.helpers.constructExecutionMetaData(
 							this.helpers.returnJsonArray({ error: error.message }),
 							{ itemData: { item: i } },

@@ -1,8 +1,6 @@
-import type { IExecuteFunctions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
-
-import { NodeOperationError, deepCopy } from 'n8n-workflow';
-
 import unset from 'lodash/unset';
+import type { IExecuteFunctions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
+import { NodeOperationError, deepCopy } from 'n8n-workflow';
 
 import { extractDataFromPDF } from '@utils/binary';
 import { updateDisplayOptions } from '@utils/utilities';
@@ -21,7 +19,7 @@ export const properties: INodeProperties[] = [
 		displayName: 'Options',
 		name: 'options',
 		type: 'collection',
-		placeholder: 'Add Option',
+		placeholder: 'Add option',
 		default: {},
 		options: [
 			{
@@ -122,7 +120,7 @@ export async function execute(this: IExecuteFunctions, items: INodeExecutionData
 
 			returnData.push(newItem);
 		} catch (error) {
-			if (this.continueOnFail(error)) {
+			if (this.continueOnFail()) {
 				returnData.push({
 					json: {
 						error: error.message,

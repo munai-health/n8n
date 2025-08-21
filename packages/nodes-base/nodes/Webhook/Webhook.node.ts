@@ -1,10 +1,9 @@
 /* eslint-disable n8n-nodes-base/node-execute-block-wrong-error-thrown */
-import { pipeline } from 'stream/promises';
 import { createWriteStream } from 'fs';
-import { stat } from 'fs/promises';
+import { rm, stat } from 'fs/promises';
+import isbot from 'isbot';
 import type {
 	IWebhookFunctions,
-	ICredentialDataDecryptedObject,
 	IDataObject,
 	INodeExecutionData,
 	INodeTypeDescription,
@@ -13,14 +12,10 @@ import type {
 	INodeProperties,
 } from 'n8n-workflow';
 import { BINARY_ENCODING, NodeOperationError, Node } from 'n8n-workflow';
-
-import { v4 as uuid } from 'uuid';
-import basicAuth from 'basic-auth';
-import isbot from 'isbot';
+import { pipeline } from 'stream/promises';
 import { file as tmpFile } from 'tmp-promise';
-import jwt from 'jsonwebtoken';
+import { v4 as uuid } from 'uuid';
 
-import { formatPrivateKey } from '../../utils/utilities';
 import {
 	authenticationProperty,
 	credentialsProperty,
@@ -32,6 +27,7 @@ import {
 	responseCodeProperty,
 	responseDataProperty,
 	responseModeProperty,
+	responseModePropertyStreaming,
 } from './description';
 import { WebhookAuthorizationError } from './error';
 import {
@@ -39,6 +35,7 @@ import {
 	configuredOutputs,
 	isIpWhitelisted,
 	setupOutputConnection,
+	validateWebhookAuthentication,
 } from './utils';
 
 export class Webhook extends Node {
@@ -49,7 +46,8 @@ export class Webhook extends Node {
 		icon: { light: 'file:webhook.svg', dark: 'file:webhook.dark.svg' },
 		name: 'webhook',
 		group: ['trigger'],
-		version: [1, 1.1, 2],
+		version: [1, 1.1, 2, 2.1],
+		defaultVersion: 2.1,
 		description: 'Starts the workflow when a webhook is called',
 		eventTriggerDescription: 'Waiting for you to call the Test URL',
 		activationMessage: 'You can now make calls to your production webhook URL.',
@@ -68,7 +66,7 @@ export class Webhook extends Node {
 			activationHint:
 				"Once you've finished building your workflow, run it without having to click this button by using the production webhook URL.",
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
+
 		inputs: [],
 		outputs: `={{(${configuredOutputs})($parameter)}}`,
 		credentials: credentialsProperty(this.authPropertyName),
@@ -134,12 +132,12 @@ export class Webhook extends Node {
 				type: 'string',
 				default: '',
 				placeholder: 'webhook',
-				required: true,
 				description:
 					"The path to listen to, dynamic values could be specified by using ':', e.g. 'your-path/:dynamic-value'. If dynamic values are set 'webhookId' would be prepended to path.",
 			},
 			authenticationProperty(this.authPropertyName),
 			responseModeProperty,
+			responseModePropertyStreaming,
 			{
 				displayName:
 					'Insert a \'Respond to Webhook\' node to control when and how you respond. <a href="https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.respondtowebhook/" target="_blank">More details</a>',
@@ -148,6 +146,18 @@ export class Webhook extends Node {
 				displayOptions: {
 					show: {
 						responseMode: ['responseNode'],
+					},
+				},
+				default: '',
+			},
+			{
+				displayName:
+					'Insert a node that supports streaming (e.g. \'AI Agent\') and enable streaming to stream directly to the response while the workflow is executed. <a href="https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.respondtowebhook/" target="_blank">More details</a>',
+				name: 'webhookStreamingNotice',
+				type: 'notice',
+				displayOptions: {
+					show: {
+						responseMode: ['streaming'],
 					},
 				},
 				default: '',
@@ -165,6 +175,18 @@ export class Webhook extends Node {
 			},
 			responseDataProperty,
 			responseBinaryPropertyNameProperty,
+			{
+				displayName:
+					'If you are sending back a response, add a "Content-Type" response header with the appropriate value to avoid unexpected behavior',
+				name: 'contentTypeNotice',
+				type: 'notice',
+				default: '',
+				displayOptions: {
+					show: {
+						responseMode: ['onReceived'],
+					},
+				},
+			},
 
 			{
 				...optionsProperty,
@@ -183,6 +205,7 @@ export class Webhook extends Node {
 
 	async webhook(context: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const { typeVersion: nodeVersion, type: nodeType } = context.getNode();
+		const responseMode = context.getNodeParameter('responseMode', 'onReceived') as string;
 
 		if (nodeVersion >= 2 && nodeType === 'n8n-nodes-base.webhook') {
 			checkResponseModeConfiguration(context);
@@ -258,6 +281,26 @@ export class Webhook extends Node {
 				: undefined,
 		};
 
+		if (responseMode === 'streaming') {
+			const res = context.getResponseObject();
+
+			// Set up streaming response headers
+			res.writeHead(200, {
+				'Content-Type': 'application/json; charset=utf-8',
+				'Transfer-Encoding': 'chunked',
+				'Cache-Control': 'no-cache',
+				Connection: 'keep-alive',
+			});
+
+			// Flush headers immediately
+			res.flushHeaders();
+
+			return {
+				noWebhookResponse: true,
+				workflowData: prepareOutput(response),
+			};
+		}
+
 		return {
 			webhookResponse: options.responseData,
 			workflowData: prepareOutput(response),
@@ -265,93 +308,7 @@ export class Webhook extends Node {
 	}
 
 	private async validateAuth(context: IWebhookFunctions) {
-		const authentication = context.getNodeParameter(this.authPropertyName) as string;
-		if (authentication === 'none') return;
-
-		const req = context.getRequestObject();
-		const headers = context.getHeaderData();
-
-		if (authentication === 'basicAuth') {
-			// Basic authorization is needed to call webhook
-			let expectedAuth: ICredentialDataDecryptedObject | undefined;
-			try {
-				expectedAuth = await context.getCredentials('httpBasicAuth');
-			} catch {}
-
-			if (expectedAuth === undefined || !expectedAuth.user || !expectedAuth.password) {
-				// Data is not defined on node so can not authenticate
-				throw new WebhookAuthorizationError(500, 'No authentication data defined on node!');
-			}
-
-			const providedAuth = basicAuth(req);
-			// Authorization data is missing
-			if (!providedAuth) throw new WebhookAuthorizationError(401);
-
-			if (providedAuth.name !== expectedAuth.user || providedAuth.pass !== expectedAuth.password) {
-				// Provided authentication data is wrong
-				throw new WebhookAuthorizationError(403);
-			}
-		} else if (authentication === 'headerAuth') {
-			// Special header with value is needed to call webhook
-			let expectedAuth: ICredentialDataDecryptedObject | undefined;
-			try {
-				expectedAuth = await context.getCredentials('httpHeaderAuth');
-			} catch {}
-
-			if (expectedAuth === undefined || !expectedAuth.name || !expectedAuth.value) {
-				// Data is not defined on node so can not authenticate
-				throw new WebhookAuthorizationError(500, 'No authentication data defined on node!');
-			}
-			const headerName = (expectedAuth.name as string).toLowerCase();
-			const expectedValue = expectedAuth.value as string;
-
-			if (
-				!headers.hasOwnProperty(headerName) ||
-				(headers as IDataObject)[headerName] !== expectedValue
-			) {
-				// Provided authentication data is wrong
-				throw new WebhookAuthorizationError(403);
-			}
-		} else if (authentication === 'jwtAuth') {
-			let expectedAuth;
-
-			try {
-				expectedAuth = (await context.getCredentials('jwtAuth')) as {
-					keyType: 'passphrase' | 'pemKey';
-					publicKey: string;
-					secret: string;
-					algorithm: jwt.Algorithm;
-				};
-			} catch {}
-
-			if (expectedAuth === undefined) {
-				// Data is not defined on node so can not authenticate
-				throw new WebhookAuthorizationError(500, 'No authentication data defined on node!');
-			}
-
-			const authHeader = req.headers.authorization;
-			const token = authHeader?.split(' ')[1];
-
-			if (!token) {
-				throw new WebhookAuthorizationError(401, 'No token provided');
-			}
-
-			let secretOrPublicKey;
-
-			if (expectedAuth.keyType === 'passphrase') {
-				secretOrPublicKey = expectedAuth.secret;
-			} else {
-				secretOrPublicKey = formatPrivateKey(expectedAuth.publicKey, true);
-			}
-
-			try {
-				return jwt.verify(token, secretOrPublicKey, {
-					algorithms: [expectedAuth.algorithm],
-				}) as IDataObject;
-			} catch (error) {
-				throw new WebhookAuthorizationError(403, error.message);
-			}
-		}
+		return await validateWebhookAuthentication(context, this.authPropertyName);
 	}
 
 	private async handleFormData(
@@ -381,10 +338,10 @@ export class Webhook extends Node {
 			const processFiles: MultiPartFormData.File[] = [];
 			let multiFile = false;
 			if (Array.isArray(files[key])) {
-				processFiles.push(...(files[key] as MultiPartFormData.File[]));
+				processFiles.push(...files[key]);
 				multiFile = true;
 			} else {
-				processFiles.push(files[key] as MultiPartFormData.File);
+				processFiles.push(files[key]);
 			}
 
 			let fileCount = 0;
@@ -405,6 +362,9 @@ export class Webhook extends Node {
 					file.originalFilename ?? file.newFilename,
 					file.mimetype,
 				);
+
+				// Delete original file to prevent tmp directory from growing too large
+				await rm(file.filepath, { force: true });
 
 				count += 1;
 			}

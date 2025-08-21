@@ -1,28 +1,27 @@
-import Container from 'typedi';
-import { mock } from 'jest-mock-extended';
-import { v4 as uuid } from 'uuid';
-import type { INode } from 'n8n-workflow';
-
-import { CredentialsRepository } from '@/databases/repositories/credentials.repository';
-import { TagRepository } from '@/databases/repositories/tag.repository';
-import { ImportService } from '@/services/import.service';
-import { TagEntity } from '@/databases/entities/TagEntity';
-import { WorkflowRepository } from '@/databases/repositories/workflow.repository';
-import { SharedWorkflowRepository } from '@/databases/repositories/sharedWorkflow.repository';
-
-import * as testDb from './shared/testDb';
-import { mockInstance } from '../shared/mocking';
-import { createMember, createOwner } from './shared/db/users';
 import {
+	getPersonalProject,
 	createWorkflow,
 	getAllSharedWorkflows,
 	getWorkflowById,
 	newWorkflow,
-} from './shared/db/workflows';
+	testDb,
+} from '@n8n/backend-test-utils';
+import type { Project, User } from '@n8n/db';
+import {
+	TagEntity,
+	CredentialsRepository,
+	TagRepository,
+	SharedWorkflowRepository,
+	WorkflowRepository,
+} from '@n8n/db';
+import { Container } from '@n8n/di';
+import { mock } from 'jest-mock-extended';
+import type { INode } from 'n8n-workflow';
+import { v4 as uuid } from 'uuid';
 
-import type { User } from '@db/entities/User';
-import type { Project } from '@/databases/entities/Project';
-import { getPersonalProject } from './shared/db/projects';
+import { ImportService } from '@/services/import.service';
+
+import { createMember, createOwner } from './shared/db/users';
 
 describe('ImportService', () => {
 	let importService: ImportService;
@@ -38,15 +37,13 @@ describe('ImportService', () => {
 
 		tagRepository = Container.get(TagRepository);
 
-		const credentialsRepository = mockInstance(CredentialsRepository);
-
-		credentialsRepository.find.mockResolvedValue([]);
+		const credentialsRepository = Container.get(CredentialsRepository);
 
 		importService = new ImportService(mock(), credentialsRepository, tagRepository);
 	});
 
 	afterEach(async () => {
-		await testDb.truncate(['Workflow', 'SharedWorkflow', 'Tag', 'WorkflowTagMapping']);
+		await testDb.truncate(['WorkflowEntity', 'SharedWorkflow', 'TagEntity', 'WorkflowTagMapping']);
 	});
 
 	afterAll(async () => {

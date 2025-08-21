@@ -6,7 +6,7 @@ import type {
 	INodeTypeDescription,
 	IWebhookResponseData,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 import { affinityApiRequest, eventsExist, mapResource } from './GenericFunctions';
 
@@ -22,7 +22,7 @@ export class AffinityTrigger implements INodeType {
 			name: 'Affinity Trigger',
 		},
 		inputs: [],
-		outputs: ['main'],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'affinityApi',

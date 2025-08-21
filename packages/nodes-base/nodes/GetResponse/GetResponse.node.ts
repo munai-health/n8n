@@ -1,3 +1,4 @@
+import moment from 'moment-timezone';
 import type {
 	IExecuteFunctions,
 	IDataObject,
@@ -7,11 +8,10 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-
-import moment from 'moment-timezone';
-import { getresponseApiRequest, getResponseApiRequestAllItems } from './GenericFunctions';
+import { NodeConnectionTypes } from 'n8n-workflow';
 
 import { contactFields, contactOperations } from './ContactDescription';
+import { getresponseApiRequest, getResponseApiRequestAllItems } from './GenericFunctions';
 
 export class GetResponse implements INodeType {
 	description: INodeTypeDescription = {
@@ -26,8 +26,9 @@ export class GetResponse implements INodeType {
 		defaults: {
 			name: 'GetResponse',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		usableAsTool: true,
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'getResponseApi',
@@ -276,6 +277,11 @@ export class GetResponse implements INodeType {
 						if (updateFields.customFieldsUi) {
 							const customFieldValues = (updateFields.customFieldsUi as IDataObject)
 								.customFieldValues as IDataObject[];
+							customFieldValues.forEach((entry) => {
+								if (typeof entry.value === 'string') {
+									entry.value = entry.value.split(',').map((value) => value.trim());
+								}
+							});
 							if (customFieldValues) {
 								body.customFieldValues = customFieldValues;
 								delete body.customFieldsUi;
@@ -296,7 +302,7 @@ export class GetResponse implements INodeType {
 				);
 				returnData.push(...executionData);
 			} catch (error) {
-				if (this.continueOnFail(error)) {
+				if (this.continueOnFail()) {
 					const executionErrorData = this.helpers.constructExecutionMetaData(
 						this.helpers.returnJsonArray({ error: error.message }),
 						{ itemData: { item: i } },

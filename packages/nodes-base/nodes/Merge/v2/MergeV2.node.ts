@@ -1,21 +1,24 @@
 import merge from 'lodash/merge';
-
-import type {
-	IExecuteFunctions,
-	IDataObject,
-	INodeExecutionData,
-	INodeType,
-	INodeTypeBaseDescription,
-	INodeTypeDescription,
-	IPairedItemData,
+import {
+	type IExecuteFunctions,
+	type IDataObject,
+	type INodeExecutionData,
+	type INodeType,
+	type INodeTypeBaseDescription,
+	type INodeTypeDescription,
+	type IPairedItemData,
+	NodeConnectionTypes,
 } from 'n8n-workflow';
 
+import { preparePairedItemDataArray } from '@utils/utilities';
+
+import { optionsDescription } from './descriptions';
 import type {
 	ClashResolveOptions,
 	MatchFieldsJoinMode,
 	MatchFieldsOptions,
 	MatchFieldsOutput,
-} from './GenericFunctions';
+} from './interfaces';
 import {
 	addSourceField,
 	addSuffixToEntriesKeys,
@@ -24,10 +27,7 @@ import {
 	findMatches,
 	mergeMatched,
 	selectMergeMethod,
-} from './GenericFunctions';
-
-import { optionsDescription } from './OptionsDescription';
-import { preparePairedItemDataArray } from '@utils/utilities';
+} from './utils';
 
 export class MergeV2 implements INodeType {
 	description: INodeTypeDescription;
@@ -40,8 +40,8 @@ export class MergeV2 implements INodeType {
 				name: 'Merge',
 			},
 
-			inputs: ['main', 'main'],
-			outputs: ['main'],
+			inputs: [NodeConnectionTypes.Main, NodeConnectionTypes.Main],
+			outputs: [NodeConnectionTypes.Main],
 			inputNames: ['Input 1', 'Input 2'],
 			// If mode is chooseBranch data from both branches is required
 			// to continue, else data from any input suffices

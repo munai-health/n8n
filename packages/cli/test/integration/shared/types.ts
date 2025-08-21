@@ -1,18 +1,18 @@
+import type { CredentialPayload } from '@n8n/backend-test-utils';
+import type { BooleanLicenseFeature, NumericLicenseFeature } from '@n8n/constants';
+import type { CredentialsEntity, Project, User, ICredentialsDb } from '@n8n/db';
 import type { Application } from 'express';
-import type { ICredentialDataDecryptedObject } from 'n8n-workflow';
-import type TestAgent from 'supertest/lib/agent';
 import type { Server } from 'http';
+import type TestAgent from 'supertest/lib/agent';
 
-import type { CredentialsEntity } from '@db/entities/CredentialsEntity';
-import type { User } from '@db/entities/User';
-import type { BooleanLicenseFeature, ICredentialsDb, NumericLicenseFeature } from '@/Interfaces';
 import type { LicenseMocker } from './license';
-import type { Project } from '@/databases/entities/Project';
 
 type EndpointGroup =
+	| 'health'
 	| 'me'
 	| 'users'
 	| 'auth'
+	| 'oauth2'
 	| 'owner'
 	| 'passwordReset'
 	| 'credentials'
@@ -25,6 +25,7 @@ type EndpointGroup =
 	| 'eventBus'
 	| 'license'
 	| 'variables'
+	| 'annotationTags'
 	| 'tags'
 	| 'externalSecrets'
 	| 'mfa'
@@ -36,12 +37,22 @@ type EndpointGroup =
 	| 'debug'
 	| 'project'
 	| 'role'
-	| 'dynamic-node-parameters';
+	| 'dynamic-node-parameters'
+	| 'apiKeys'
+	| 'evaluation'
+	| 'ai'
+	| 'folder'
+	| 'insights'
+	| 'data-store'
+	| 'module-settings';
+
+type ModuleName = 'insights' | 'external-secrets' | 'data-store';
 
 export interface SetupProps {
 	endpointGroups?: EndpointGroup[];
 	enabledFeatures?: BooleanLicenseFeature[];
 	quotas?: Partial<{ [K in NumericLicenseFeature]: number }>;
+	modules?: ModuleName[];
 }
 
 export type SuperAgentTest = TestAgent;
@@ -51,15 +62,12 @@ export interface TestServer {
 	httpServer: Server;
 	authAgentFor: (user: User) => TestAgent;
 	publicApiAgentFor: (user: User) => TestAgent;
+	publicApiAgentWithApiKey: (apiKey: string) => TestAgent;
+	publicApiAgentWithoutApiKey: () => TestAgent;
 	authlessAgent: TestAgent;
+	restlessAgent: TestAgent;
 	license: LicenseMocker;
 }
-
-export type CredentialPayload = {
-	name: string;
-	type: string;
-	data: ICredentialDataDecryptedObject;
-};
 
 export type SaveCredentialFunction = (
 	credentialPayload: CredentialPayload,

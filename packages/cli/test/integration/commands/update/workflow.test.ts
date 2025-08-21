@@ -1,18 +1,19 @@
-import { InternalHooks } from '@/InternalHooks';
-import { LoadNodesAndCredentials } from '@/LoadNodesAndCredentials';
+import {
+	mockInstance,
+	testDb,
+	createWorkflowWithTrigger,
+	getAllWorkflows,
+} from '@n8n/backend-test-utils';
+
 import { UpdateWorkflowCommand } from '@/commands/update/workflow';
+import { LoadNodesAndCredentials } from '@/load-nodes-and-credentials';
+import { setupTestCommand } from '@test-integration/utils/test-command';
 
-import { setupTestCommand } from '@test-integration/utils/testCommand';
-import * as testDb from '../../shared/testDb';
-import { createWorkflowWithTrigger, getAllWorkflows } from '../../shared/db/workflows';
-import { mockInstance } from '../../../shared/mocking';
-
-mockInstance(InternalHooks);
 mockInstance(LoadNodesAndCredentials);
 const command = setupTestCommand(UpdateWorkflowCommand);
 
 beforeEach(async () => {
-	await testDb.truncate(['Workflow']);
+	await testDb.truncate(['WorkflowEntity']);
 });
 
 test('update:workflow can activate all workflows', async () => {

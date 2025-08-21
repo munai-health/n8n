@@ -1,10 +1,12 @@
 import {
 	NodeOperationError,
+	NodeConnectionTypes,
 	type IExecuteFunctions,
 	type INodeExecutionData,
 	type INodeType,
 	type INodeTypeDescription,
 } from 'n8n-workflow';
+
 import { extractDataFromPDF } from '@utils/binary';
 
 export class ReadPDF implements INodeType {
@@ -21,8 +23,8 @@ export class ReadPDF implements INodeType {
 			name: 'Read PDF',
 			color: '#003355',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		properties: [
 			{
 				displayName: 'Input Binary Field',
@@ -84,7 +86,7 @@ export class ReadPDF implements INodeType {
 					json,
 				});
 			} catch (error) {
-				if (this.continueOnFail(error)) {
+				if (this.continueOnFail()) {
 					returnData.push({
 						json: {
 							error: error.message,

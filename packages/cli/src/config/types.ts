@@ -1,6 +1,7 @@
-import type { BinaryData } from 'n8n-core';
-import type { schema } from './schema';
 import type { RedisOptions } from 'ioredis';
+import type { IProcessedDataConfig } from 'n8n-workflow';
+
+import type { schema } from './schema';
 
 // -----------------------------------
 //          transformers
@@ -49,7 +50,7 @@ type NumericPath = CollectPathsByType<number>;
 
 type BooleanPath = CollectPathsByType<boolean>;
 
-type StringLiteralArrayPath = CollectPathsByType<Readonly<string[]>>;
+type StringLiteralArrayPath = CollectPathsByType<readonly string[]>;
 
 type StringPath = CollectPathsByType<string>;
 
@@ -74,23 +75,21 @@ type ToReturnType<T extends ConfigOptionPath> = T extends NumericPath
 
 type ExceptionPaths = {
 	'queue.bull.redis': RedisOptions;
-	binaryDataManager: BinaryData.Config;
-	'nodes.exclude': string[] | undefined;
-	'nodes.include': string[] | undefined;
+	processedDataManager: IProcessedDataConfig;
 	'userManagement.isInstanceOwnerSetUp': boolean;
 	'ui.banners.dismissed': string[] | undefined;
+	easyAIWorkflowOnboarded: boolean | undefined;
 };
 
 // -----------------------------------
 //        string literals map
 // -----------------------------------
 
-type GetPathSegmentsWithUnions<T> =
-	T extends ReadonlyArray<infer C>
-		? [C]
-		: {
-				[K in ValidKeys<T>]: [K, ...GetPathSegmentsWithUnions<T[K]>];
-			}[ValidKeys<T>];
+type GetPathSegmentsWithUnions<T> = T extends ReadonlyArray<infer C>
+	? [C]
+	: {
+			[K in ValidKeys<T>]: [K, ...GetPathSegmentsWithUnions<T[K]>];
+		}[ValidKeys<T>];
 
 type ToPathUnionPair<T extends string[]> = T extends [...infer Path, infer Union]
 	? Path extends string[]

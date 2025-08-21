@@ -6,6 +6,7 @@ import type {
 	INodeTypeDescription,
 	IWebhookResponseData,
 } from 'n8n-workflow';
+import { NodeConnectionTypes } from 'n8n-workflow';
 
 import { customerIoApiRequest, eventExists } from './GenericFunctions';
 
@@ -30,7 +31,7 @@ export class CustomerIoTrigger implements INodeType {
 			name: 'Customer.io Trigger',
 		},
 		inputs: [],
-		outputs: ['main'],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'customerIoApi',

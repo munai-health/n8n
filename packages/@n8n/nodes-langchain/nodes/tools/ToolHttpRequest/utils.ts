@@ -1,24 +1,22 @@
+import { Readability } from '@mozilla/readability';
+import * as cheerio from 'cheerio';
+import { convert } from 'html-to-text';
+import { JSDOM } from 'jsdom';
+import get from 'lodash/get';
+import set from 'lodash/set';
+import unset from 'lodash/unset';
+import { getOAuth2AdditionalParameters } from 'n8n-nodes-base/dist/nodes/HttpRequest/GenericFunctions';
 import type {
-	IExecuteFunctions,
 	IDataObject,
 	IHttpRequestOptions,
 	IRequestOptionsSimplified,
 	ExecutionError,
 	NodeApiError,
+	ISupplyDataFunctions,
 } from 'n8n-workflow';
-import { NodeConnectionType, NodeOperationError, jsonParse } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError, jsonParse } from 'n8n-workflow';
+import { z } from 'zod';
 
-import { getOAuth2AdditionalParameters } from 'n8n-nodes-base/dist/nodes/HttpRequest/GenericFunctions';
-
-import set from 'lodash/set';
-import get from 'lodash/get';
-import unset from 'lodash/unset';
-
-import cheerio from 'cheerio';
-import { convert } from 'html-to-text';
-
-import { Readability } from '@mozilla/readability';
-import { JSDOM } from 'jsdom';
 import type {
 	ParameterInputType,
 	ParametersValues,
@@ -27,8 +25,9 @@ import type {
 	SendIn,
 	ToolParameter,
 } from './interfaces';
+import type { DynamicZodObject } from '../../../types/zod.types';
 
-const genericCredentialRequest = async (ctx: IExecuteFunctions, itemIndex: number) => {
+const genericCredentialRequest = async (ctx: ISupplyDataFunctions, itemIndex: number) => {
 	const genericType = ctx.getNodeParameter('genericAuthType', itemIndex) as string;
 
 	if (genericType === 'httpBasicAuth' || genericType === 'httpDigestAuth') {
@@ -49,7 +48,8 @@ const genericCredentialRequest = async (ctx: IExecuteFunctions, itemIndex: numbe
 		const headerAuth = await ctx.getCredentials('httpHeaderAuth', itemIndex);
 
 		return async (options: IHttpRequestOptions) => {
-			options.headers![headerAuth.name as string] = headerAuth.value;
+			if (!options.headers) options.headers = {};
+			options.headers[headerAuth.name as string] = headerAuth.value;
 			return await ctx.helpers.httpRequest(options);
 		};
 	}
@@ -58,9 +58,7 @@ const genericCredentialRequest = async (ctx: IExecuteFunctions, itemIndex: numbe
 		const queryAuth = await ctx.getCredentials('httpQueryAuth', itemIndex);
 
 		return async (options: IHttpRequestOptions) => {
-			if (!options.qs) {
-				options.qs = {};
-			}
+			if (!options.qs) options.qs = {};
 			options.qs[queryAuth.name as string] = queryAuth.value;
 			return await ctx.helpers.httpRequest(options);
 		};
@@ -94,7 +92,7 @@ const genericCredentialRequest = async (ctx: IExecuteFunctions, itemIndex: numbe
 
 	if (genericType === 'oAuth2Api') {
 		return async (options: IHttpRequestOptions) => {
-			return await ctx.helpers.requestOAuth2.call(ctx, 'oAuth1Api', options, {
+			return await ctx.helpers.requestOAuth2.call(ctx, 'oAuth2Api', options, {
 				tokenType: 'Bearer',
 			});
 		};
@@ -105,23 +103,22 @@ const genericCredentialRequest = async (ctx: IExecuteFunctions, itemIndex: numbe
 	});
 };
 
-const predefinedCredentialRequest = async (ctx: IExecuteFunctions, itemIndex: number) => {
+const predefinedCredentialRequest = async (ctx: ISupplyDataFunctions, itemIndex: number) => {
 	const predefinedType = ctx.getNodeParameter('nodeCredentialType', itemIndex) as string;
 	const additionalOptions = getOAuth2AdditionalParameters(predefinedType);
 
 	return async (options: IHttpRequestOptions) => {
-		return await ctx.helpers.requestWithAuthentication.call(
+		return await ctx.helpers.httpRequestWithAuthentication.call(
 			ctx,
 			predefinedType,
 			options,
 			additionalOptions && { oauth2: additionalOptions },
-			itemIndex,
 		);
 	};
 };
 
 export const configureHttpRequestFunction = async (
-	ctx: IExecuteFunctions,
+	ctx: ISupplyDataFunctions,
 	credentialsType: 'predefinedCredentialType' | 'genericCredentialType' | 'none',
 	itemIndex: number,
 ) => {
@@ -148,7 +145,26 @@ const defaultOptimizer = <T>(response: T) => {
 	return String(response);
 };
 
-const htmlOptimizer = (ctx: IExecuteFunctions, itemIndex: number, maxLength: number) => {
+function isBinary(data: unknown) {
+	// Check if data is a Buffer
+	if (Buffer.isBuffer(data)) {
+		return true;
+	}
+
+	// If data is a string, assume it's text unless it contains null characters.
+	if (typeof data === 'string') {
+		// If the string contains a null character, it's likely binary.
+		if (data.includes('\0')) {
+			return true;
+		}
+		return false;
+	}
+
+	// For any other type, assume it's not binary.
+	return false;
+}
+
+const htmlOptimizer = (ctx: ISupplyDataFunctions, itemIndex: number, maxLength: number) => {
 	const cssSelector = ctx.getNodeParameter('cssSelector', itemIndex, '') as string;
 	const onlyContent = ctx.getNodeParameter('onlyContent', itemIndex, false) as boolean;
 	let elementsToOmit: string[] = [];
@@ -175,6 +191,7 @@ const htmlOptimizer = (ctx: IExecuteFunctions, itemIndex: number, maxLength: num
 			);
 		}
 		const returnData: string[] = [];
+
 		const html = cheerio.load(response);
 		const htmlElements = html(cssSelector);
 
@@ -215,7 +232,7 @@ const htmlOptimizer = (ctx: IExecuteFunctions, itemIndex: number, maxLength: num
 	};
 };
 
-const textOptimizer = (ctx: IExecuteFunctions, itemIndex: number, maxLength: number) => {
+const textOptimizer = (ctx: ISupplyDataFunctions, itemIndex: number, maxLength: number) => {
 	return (response: string | IDataObject) => {
 		if (typeof response === 'object') {
 			try {
@@ -246,7 +263,7 @@ const textOptimizer = (ctx: IExecuteFunctions, itemIndex: number, maxLength: num
 	};
 };
 
-const jsonOptimizer = (ctx: IExecuteFunctions, itemIndex: number) => {
+const jsonOptimizer = (ctx: ISupplyDataFunctions, itemIndex: number) => {
 	return (response: string): string => {
 		let responseData: IDataObject | IDataObject[] | string = response;
 
@@ -325,7 +342,7 @@ const jsonOptimizer = (ctx: IExecuteFunctions, itemIndex: number) => {
 	};
 };
 
-export const configureResponseOptimizer = (ctx: IExecuteFunctions, itemIndex: number) => {
+export const configureResponseOptimizer = (ctx: ISupplyDataFunctions, itemIndex: number) => {
 	const optimizeResponse = ctx.getNodeParameter('optimizeResponse', itemIndex, false) as boolean;
 
 	if (optimizeResponse) {
@@ -355,7 +372,7 @@ export const configureResponseOptimizer = (ctx: IExecuteFunctions, itemIndex: nu
 };
 
 const extractPlaceholders = (text: string): string[] => {
-	const placeholder = /(\{[a-zA-Z0-9_]+\})/g;
+	const placeholder = /(\{[a-zA-Z0-9_-]+\})/g;
 	const returnData: string[] = [];
 
 	const matches = text.matchAll(placeholder);
@@ -378,7 +395,6 @@ export const extractParametersFromText = (
 	const parameters = extractPlaceholders(text);
 
 	if (parameters.length) {
-		// eslint-disable-next-line @typescript-eslint/no-use-before-define
 		const inputParameters = prepareParameters(
 			parameters.map((name) => ({
 				name,
@@ -470,7 +486,7 @@ const MODEL_INPUT_DESCRIPTION = {
 };
 
 export const updateParametersAndOptions = (options: {
-	ctx: IExecuteFunctions;
+	ctx: ISupplyDataFunctions;
 	itemIndex: number;
 	toolParameters: ToolParameter[];
 	placeholdersDefinitions: PlaceholderDefinition[];
@@ -559,7 +575,7 @@ export const prepareToolDescription = (
 };
 
 export const configureToolFunction = (
-	ctx: IExecuteFunctions,
+	ctx: ISupplyDataFunctions,
 	itemIndex: number,
 	toolParameters: ToolParameter[],
 	requestOptions: IHttpRequestOptions,
@@ -567,11 +583,14 @@ export const configureToolFunction = (
 	httpRequest: (options: IHttpRequestOptions) => Promise<any>,
 	optimizeResponse: (response: string) => string,
 ) => {
-	return async (query: string): Promise<string> => {
-		const { index } = ctx.addInputData(NodeConnectionType.AiTool, [[{ json: { query } }]]);
+	return async (query: string | IDataObject): Promise<string> => {
+		const { index } = ctx.addInputData(NodeConnectionTypes.AiTool, [[{ json: { query } }]]);
 
+		// Clone options and rawRequestOptions to avoid mutating the original objects
+		const options: IHttpRequestOptions | null = structuredClone(requestOptions);
+		const clonedRawRequestOptions: { [key: string]: string } = structuredClone(rawRequestOptions);
+		let fullResponse: any;
 		let response: string = '';
-		let options: IHttpRequestOptions | null = null;
 		let executionError: Error | undefined = undefined;
 
 		if (!toolParameters.length) {
@@ -582,18 +601,22 @@ export const configureToolFunction = (
 			if (query) {
 				let dataFromModel;
 
-				try {
-					dataFromModel = jsonParse<IDataObject>(query);
-				} catch (error) {
-					if (toolParameters.length === 1) {
-						dataFromModel = { [toolParameters[0].name]: query };
-					} else {
-						throw new NodeOperationError(
-							ctx.getNode(),
-							`Input is not a valid JSON: ${error.message}`,
-							{ itemIndex },
-						);
+				if (typeof query === 'string') {
+					try {
+						dataFromModel = jsonParse<IDataObject>(query);
+					} catch (error) {
+						if (toolParameters.length === 1) {
+							dataFromModel = { [toolParameters[0].name]: query };
+						} else {
+							throw new NodeOperationError(
+								ctx.getNode(),
+								`Input is not a valid JSON: ${error.message}`,
+								{ itemIndex },
+							);
+						}
 					}
+				} else {
+					dataFromModel = query;
 				}
 
 				for (const parameter of toolParameters) {
@@ -608,8 +631,6 @@ export const configureToolFunction = (
 						);
 					}
 				}
-
-				options = requestOptions;
 
 				for (const parameter of toolParameters) {
 					let argument = dataFromModel[parameter.name];
@@ -654,7 +675,7 @@ export const configureToolFunction = (
 							argument = String(argument);
 							if (
 								!argument.startsWith('"') &&
-								!rawRequestOptions[parameter.sendIn].includes(`"{${parameter.name}}"`)
+								!clonedRawRequestOptions[parameter.sendIn].includes(`"{${parameter.name}}"`)
 							) {
 								argument = `"${argument}"`;
 							}
@@ -664,10 +685,9 @@ export const configureToolFunction = (
 							argument = JSON.stringify(argument);
 						}
 
-						rawRequestOptions[parameter.sendIn] = rawRequestOptions[parameter.sendIn].replace(
-							`{${parameter.name}}`,
-							String(argument),
-						);
+						clonedRawRequestOptions[parameter.sendIn] = clonedRawRequestOptions[
+							parameter.sendIn
+						].replace(`{${parameter.name}}`, String(argument));
 						continue;
 					}
 
@@ -688,7 +708,7 @@ export const configureToolFunction = (
 					set(options, [parameter.sendIn, parameter.name], argument);
 				}
 
-				for (const [key, value] of Object.entries(rawRequestOptions)) {
+				for (const [key, value] of Object.entries(clonedRawRequestOptions)) {
 					if (value) {
 						let parsedValue;
 						try {
@@ -743,10 +763,23 @@ export const configureToolFunction = (
 
 		if (options) {
 			try {
-				response = optimizeResponse(await httpRequest(options));
+				fullResponse = await httpRequest(options);
 			} catch (error) {
 				const httpCode = (error as NodeApiError).httpCode;
 				response = `${httpCode ? `HTTP ${httpCode} ` : ''}There was an error: "${error.message}"`;
+			}
+
+			if (!response) {
+				try {
+					// Check if the response is binary data
+					if (fullResponse.body && isBinary(fullResponse.body)) {
+						throw new NodeOperationError(ctx.getNode(), 'Binary data is not supported');
+					}
+
+					response = optimizeResponse(fullResponse.body ?? fullResponse);
+				} catch (error) {
+					response = `There was an error: "${error.message}"`;
+				}
 			}
 		}
 
@@ -758,11 +791,46 @@ export const configureToolFunction = (
 		}
 
 		if (executionError) {
-			void ctx.addOutputData(NodeConnectionType.AiTool, index, executionError as ExecutionError);
+			void ctx.addOutputData(NodeConnectionTypes.AiTool, index, executionError as ExecutionError);
 		} else {
-			void ctx.addOutputData(NodeConnectionType.AiTool, index, [[{ json: { response } }]]);
+			void ctx.addOutputData(NodeConnectionTypes.AiTool, index, [[{ json: { response } }]]);
 		}
 
 		return response;
 	};
 };
+
+function makeParameterZodSchema(parameter: ToolParameter) {
+	let schema: z.ZodTypeAny;
+
+	if (parameter.type === 'string') {
+		schema = z.string();
+	} else if (parameter.type === 'number') {
+		schema = z.number();
+	} else if (parameter.type === 'boolean') {
+		schema = z.boolean();
+	} else if (parameter.type === 'json') {
+		schema = z.record(z.any());
+	} else {
+		schema = z.string();
+	}
+
+	if (!parameter.required) {
+		schema = schema.optional();
+	}
+
+	if (parameter.description) {
+		schema = schema.describe(parameter.description);
+	}
+
+	return schema;
+}
+
+export function makeToolInputSchema(parameters: ToolParameter[]): DynamicZodObject {
+	const schemaEntries = parameters.map((parameter) => [
+		parameter.name,
+		makeParameterZodSchema(parameter),
+	]);
+
+	return z.object(Object.fromEntries(schemaEntries));
+}

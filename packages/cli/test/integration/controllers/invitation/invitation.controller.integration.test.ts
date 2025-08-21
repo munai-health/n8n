@@ -1,37 +1,33 @@
-import { mocked } from 'jest-mock';
-import Container from 'typedi';
-import { Not } from '@n8n/typeorm';
-
-import { InternalHooks } from '@/InternalHooks';
-import { ExternalHooks } from '@/ExternalHooks';
-import { UserManagementMailer } from '@/UserManagement/email';
-import { UserRepository } from '@/databases/repositories/user.repository';
-import { PasswordUtility } from '@/services/password.utility';
-
 import {
+	mockInstance,
 	randomEmail,
 	randomInvalidPassword,
 	randomName,
 	randomValidPassword,
-} from '../../shared/random';
-import { createMember, createOwner, createUserShell } from '../../shared/db/users';
-import { mockInstance } from '../../../shared/mocking';
-import * as utils from '../../shared/utils';
+} from '@n8n/backend-test-utils';
+import type { User } from '@n8n/db';
+import { ProjectRelationRepository, UserRepository } from '@n8n/db';
+import { Container } from '@n8n/di';
+import { Not } from '@n8n/typeorm';
+
+import { EventService } from '@/events/event.service';
+import { ExternalHooks } from '@/external-hooks';
+import { PasswordUtility } from '@/services/password.utility';
+import { UserManagementMailer } from '@/user-management/email';
 
 import {
 	assertReturnedUserProps,
 	assertStoredUserProps,
 	assertUserInviteResult,
 } from './assertions';
-
-import type { User } from '@/databases/entities/User';
+import { createMember, createOwner, createUserShell } from '../../shared/db/users';
+import * as utils from '../../shared/utils';
 import type { UserInvitationResult } from '../../shared/utils/users';
-import { ProjectRelationRepository } from '@/databases/repositories/projectRelation.repository';
 
 describe('InvitationController', () => {
 	const mailer = mockInstance(UserManagementMailer);
 	const externalHooks = mockInstance(ExternalHooks);
-	const internalHooks = mockInstance(InternalHooks);
+	const eventService = mockInstance(EventService);
 
 	const testServer = utils.setupTestServer({ endpointGroups: ['invitations'] });
 
@@ -192,7 +188,7 @@ describe('InvitationController', () => {
 			expect(storedMember.password).not.toBe(memberProps.password);
 
 			const comparisonResult = await Container.get(PasswordUtility).compare(
-				member.password,
+				member.password!,
 				storedMember.password,
 			);
 
@@ -249,6 +245,7 @@ describe('InvitationController', () => {
 			const { user } = response.body.data[0];
 
 			expect(user.inviteAcceptUrl).toBeDefined();
+			expect(user).toHaveProperty('role', 'global:member');
 
 			const inviteUrl = new URL(user.inviteAcceptUrl);
 
@@ -413,14 +410,24 @@ describe('InvitationController', () => {
 			expect(externalHookName).toBe('user.invited');
 			expect(externalHookArg?.[0]).toStrictEqual([newUserEmail]);
 
-			// internal hooks
-
-			const calls = mocked(internalHooks).onUserTransactionalEmail.mock.calls;
-
-			for (const [onUserTransactionalEmailArg] of calls) {
-				expect(onUserTransactionalEmailArg.user_id).toBeDefined();
-				expect(onUserTransactionalEmailArg.message_type).toBe('New user invite');
-				expect(onUserTransactionalEmailArg.public_api).toBe(false);
+			for (const [eventName, payload] of eventService.emit.mock.calls) {
+				if (eventName === 'user-invited') {
+					expect(payload).toEqual({
+						user: expect.objectContaining({ id: expect.any(String) }),
+						targetUserId: expect.arrayContaining([expect.any(String), expect.any(String)]),
+						publicApi: false,
+						emailSent: true,
+						inviteeRole: 'global:member',
+					});
+				} else if (eventName === 'user-transactional-email-sent') {
+					expect(payload).toEqual({
+						userId: expect.any(String),
+						messageType: 'New user invite',
+						publicApi: false,
+					});
+				} else {
+					fail(`Unexpected event name: ${eventName}`);
+				}
 			}
 		});
 

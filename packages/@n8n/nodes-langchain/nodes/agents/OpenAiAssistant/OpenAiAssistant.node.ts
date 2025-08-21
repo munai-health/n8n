@@ -1,16 +1,18 @@
 import { AgentExecutor } from 'langchain/agents';
-import { OpenAI as OpenAIClient } from 'openai';
+import type { OpenAIToolType } from 'langchain/dist/experimental/openai_assistant/schema';
 import { OpenAIAssistantRunnable } from 'langchain/experimental/openai_assistant';
-import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import type {
 	IExecuteFunctions,
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import type { OpenAIToolType } from 'langchain/dist/experimental/openai_assistant/schema';
-import { getConnectedTools } from '../../../utils/helpers';
-import { getTracingConfig } from '../../../utils/tracing';
+import { OpenAI as OpenAIClient } from 'openai';
+
+import { getConnectedTools } from '@utils/helpers';
+import { getTracingConfig } from '@utils/tracing';
+
 import { formatToOpenAIAssistantTool } from './utils';
 
 export class OpenAiAssistant implements INodeType {
@@ -42,10 +44,10 @@ export class OpenAiAssistant implements INodeType {
 			},
 		},
 		inputs: [
-			{ type: NodeConnectionType.Main },
-			{ type: NodeConnectionType.AiTool, displayName: 'Tools' },
+			{ type: NodeConnectionTypes.Main },
+			{ type: NodeConnectionTypes.AiTool, displayName: 'Tools' },
 		],
-		outputs: [NodeConnectionType.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'openAiApi',
@@ -196,7 +198,7 @@ export class OpenAiAssistant implements INodeType {
 										properties: {
 											name: '={{$responseItem.name}}',
 											value: '={{$responseItem.id}}',
-											// eslint-disable-next-line n8n-local-rules/no-interpolation-in-regular-string
+
 											description: '={{$responseItem.model}}',
 										},
 									},
@@ -313,7 +315,7 @@ export class OpenAiAssistant implements INodeType {
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const nodeVersion = this.getNode().typeVersion;
-		const tools = await getConnectedTools(this, nodeVersion > 1);
+		const tools = await getConnectedTools(this, nodeVersion > 1, false);
 		const credentials = await this.getCredentials('openAiApi');
 
 		const items = this.getInputData();
@@ -383,7 +385,7 @@ export class OpenAiAssistant implements INodeType {
 
 				returnData.push({ json: response });
 			} catch (error) {
-				if (this.continueOnFail(error)) {
+				if (this.continueOnFail()) {
 					returnData.push({ json: { error: error.message }, pairedItem: { item: itemIndex } });
 					continue;
 				}

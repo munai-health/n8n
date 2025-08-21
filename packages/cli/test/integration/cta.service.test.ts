@@ -1,11 +1,12 @@
-import Container from 'typedi';
-import * as testDb from './shared/testDb';
+import { createManyWorkflows, testDb } from '@n8n/backend-test-utils';
+import type { User } from '@n8n/db';
+import { StatisticsNames } from '@n8n/db';
+import { Container } from '@n8n/di';
+
 import { CtaService } from '@/services/cta.service';
+
 import { createUser } from './shared/db/users';
-import { createManyWorkflows } from './shared/db/workflows';
-import type { User } from '@/databases/entities/User';
-import { createWorkflowStatisticsItem } from './shared/db/workflowStatistics';
-import { StatisticsNames } from '@/databases/entities/WorkflowStatistics';
+import { createWorkflowStatisticsItem } from './shared/db/workflow-statistics';
 
 describe('CtaService', () => {
 	let ctaService: CtaService;
@@ -24,7 +25,7 @@ describe('CtaService', () => {
 
 	describe('getBecomeCreatorCta()', () => {
 		afterEach(async () => {
-			await testDb.truncate(['Workflow', 'SharedWorkflow']);
+			await testDb.truncate(['WorkflowEntity', 'SharedWorkflow']);
 		});
 
 		test.each([

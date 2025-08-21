@@ -1,7 +1,7 @@
 // Load type definitions that come with Cypress module
 /// <reference types="cypress" />
 
-import type { IN8nUISettings } from 'n8n-workflow';
+import type { FrontendSettings, PushPayload, PushType, N8nEnvFeatFlags } from '@n8n/api-types';
 
 Cypress.Keyboard.defaults({
 	keystrokeDelay: 0,
@@ -10,6 +10,10 @@ Cypress.Keyboard.defaults({
 interface SigninPayload {
 	email: string;
 	password: string;
+}
+
+interface DragAndDropOptions {
+	position: 'top' | 'center' | 'bottom';
 }
 
 declare global {
@@ -41,12 +45,17 @@ declare global {
 			 */
 			signinAsMember(index?: number): void;
 			signout(): void;
-			overrideSettings(value: Partial<IN8nUISettings>): void;
+			overrideSettings(value: Partial<FrontendSettings>): void;
 			enableFeature(feature: string): void;
 			disableFeature(feature: string): void;
 			enableQueueMode(): void;
 			disableQueueMode(): void;
 			changeQuota(feature: string, value: number): void;
+			setEnvFeatureFlags(
+				flags: N8nEnvFeatFlags,
+			): Chainable<{ success: boolean; flags?: N8nEnvFeatFlags; error?: string }>;
+			clearEnvFeatureFlags(): Chainable<{ success: boolean; flags: N8nEnvFeatFlags }>;
+			getEnvFeatureFlags(): Chainable<N8nEnvFeatFlags>;
 			waitForLoad(waitForIntercepts?: boolean): void;
 			grantBrowserPermissions(...permissions: string[]): void;
 			readClipboard(): Chainable<string>;
@@ -54,23 +63,37 @@ declare global {
 			drag(
 				selector: string | Chainable<JQuery<HTMLElement>>,
 				target: [number, number],
-				options?: { abs?: boolean; index?: number; realMouse?: boolean; clickToFinish?: boolean },
+				options?: {
+					abs?: boolean;
+					index?: number;
+					realMouse?: boolean;
+					clickToFinish?: boolean;
+					moveTwice?: boolean;
+				},
 			): void;
-			draganddrop(draggableSelector: string, droppableSelector: string): void;
-			push(type: string, data: unknown): void;
+			draganddrop(
+				draggableSelector: string,
+				droppableSelector: string,
+				options?: Partial<DragAndDropOptions>,
+			): void;
+			push<Type extends PushType>(type: Type, data: PushPayload<Type>): void;
 			shouldNotHaveConsoleErrors(): void;
 			window(): Chainable<
 				AUTWindow & {
 					innerWidth: number;
 					innerHeight: number;
 					preventNodeViewBeforeUnload?: boolean;
+					maxPinnedDataSize?: number;
 					featureFlags: {
 						override: (feature: string, value: unknown) => void;
 					};
 				}
 			>;
 			resetDatabase(): void;
+			clearIndexedDB(dbName: string, storeName?: string): Chainable<void>;
 			setAppDate(targetDate: number | Date): void;
+			interceptNewTab(): Chainable<void>;
+			visitInterceptedTab(): Chainable<void>;
 		}
 	}
 }

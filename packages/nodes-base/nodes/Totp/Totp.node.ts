@@ -4,10 +4,8 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-
-import { NodeOperationError } from 'n8n-workflow';
-
-import OTPAuth from 'otpauth';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+import * as OTPAuth from 'otpauth';
 
 export class Totp implements INodeType {
 	description: INodeTypeDescription = {
@@ -21,8 +19,9 @@ export class Totp implements INodeType {
 		defaults: {
 			name: 'TOTP',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		usableAsTool: true,
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'totpApi',
@@ -54,7 +53,7 @@ export class Totp implements INodeType {
 					},
 				},
 				default: {},
-				placeholder: 'Add Option',
+				placeholder: 'Add option',
 				options: [
 					{
 						displayName: 'Algorithm',
@@ -126,7 +125,7 @@ export class Totp implements INodeType {
 		const returnData: INodeExecutionData[] = [];
 
 		const operation = this.getNodeParameter('operation', 0);
-		const credentials = (await this.getCredentials('totpApi')) as { label: string; secret: string };
+		const credentials = await this.getCredentials<{ label: string; secret: string }>('totpApi');
 
 		if (!credentials.label.includes(':')) {
 			throw new NodeOperationError(this.getNode(), 'Malformed label - expected `issuer:username`');

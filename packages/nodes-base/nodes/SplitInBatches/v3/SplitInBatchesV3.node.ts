@@ -1,4 +1,3 @@
-/* eslint-disable n8n-nodes-base/node-filename-against-convention */
 import type {
 	IExecuteFunctions,
 	INodeExecutionData,
@@ -6,7 +5,7 @@ import type {
 	INodeTypeDescription,
 	IPairedItemData,
 } from 'n8n-workflow';
-import { deepCopy } from 'n8n-workflow';
+import { NodeConnectionTypes, deepCopy } from 'n8n-workflow';
 
 export class SplitInBatchesV3 implements INodeType {
 	description: INodeTypeDescription = {
@@ -21,9 +20,9 @@ export class SplitInBatchesV3 implements INodeType {
 			name: 'Loop Over Items',
 			color: '#007755',
 		},
-		inputs: ['main'],
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
-		outputs: ['main', 'main'],
+		inputs: [NodeConnectionTypes.Main],
+
+		outputs: [NodeConnectionTypes.Main, NodeConnectionTypes.Main],
 		outputNames: ['done', 'loop'],
 		properties: [
 			{
@@ -47,7 +46,7 @@ export class SplitInBatchesV3 implements INodeType {
 				displayName: 'Options',
 				name: 'options',
 				type: 'collection',
-				placeholder: 'Add Option',
+				placeholder: 'Add option',
 				default: {},
 				options: [
 					{
@@ -56,7 +55,7 @@ export class SplitInBatchesV3 implements INodeType {
 						type: 'boolean',
 						default: false,
 						description:
-							'Whether the node will be reset and so with the current input-data newly initialized',
+							'Whether the node starts again from the beginning of the input items. This will treat incoming data as a new set rather than continuing with the previous items.',
 					},
 				],
 			},

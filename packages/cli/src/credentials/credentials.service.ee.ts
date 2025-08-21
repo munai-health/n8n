@@ -1,17 +1,18 @@
+import type { CredentialsEntity, User } from '@n8n/db';
+import { Project, SharedCredentials, SharedCredentialsRepository } from '@n8n/db';
+import { Service } from '@n8n/di';
+import { hasGlobalScope, rolesWithScope } from '@n8n/permissions';
 // eslint-disable-next-line n8n-local-rules/misplaced-n8n-typeorm-import
 import { In, type EntityManager } from '@n8n/typeorm';
-import type { User } from '@db/entities/User';
-import { CredentialsService } from './credentials.service';
-import { SharedCredentialsRepository } from '@db/repositories/sharedCredentials.repository';
-import type { CredentialsEntity } from '@/databases/entities/CredentialsEntity';
-import { Service } from 'typedi';
 import type { ICredentialDataDecryptedObject } from 'n8n-workflow';
+
 import { NotFoundError } from '@/errors/response-errors/not-found.error';
-import { OwnershipService } from '@/services/ownership.service';
-import { Project } from '@/databases/entities/Project';
-import { ProjectService } from '@/services/project.service';
 import { TransferCredentialError } from '@/errors/response-errors/transfer-credential.error';
-import { SharedCredentials } from '@/databases/entities/SharedCredentials';
+import { OwnershipService } from '@/services/ownership.service';
+import { ProjectService } from '@/services/project.service.ee';
+
+import { CredentialsFinderService } from './credentials-finder.service';
+import { CredentialsService } from './credentials.service';
 
 @Service()
 export class EnterpriseCredentialsService {
@@ -20,29 +21,55 @@ export class EnterpriseCredentialsService {
 		private readonly ownershipService: OwnershipService,
 		private readonly credentialsService: CredentialsService,
 		private readonly projectService: ProjectService,
+		private readonly credentialsFinderService: CredentialsFinderService,
 	) {}
 
 	async shareWithProjects(
-		credential: CredentialsEntity,
+		user: User,
+		credentialId: string,
 		shareWithIds: string[],
 		entityManager?: EntityManager,
 	) {
 		const em = entityManager ?? this.sharedCredentialsRepository.manager;
 
-		const projects = await em.find(Project, {
-			where: { id: In(shareWithIds), type: 'personal' },
+		let projects = await em.find(Project, {
+			where: [
+				{
+					id: In(shareWithIds),
+					type: 'team',
+					// if user can see all projects, don't check project access
+					// if they can't, find projects they can list
+					...(hasGlobalScope(user, 'project:list')
+						? {}
+						: {
+								projectRelations: {
+									userId: user.id,
+									role: In(rolesWithScope('project', 'project:list')),
+								},
+							}),
+				},
+				{
+					id: In(shareWithIds),
+					type: 'personal',
+				},
+			],
+			relations: { sharedCredentials: true },
 		});
+		// filter out all projects that already own the credential
+		projects = projects.filter(
+			(p) =>
+				!p.sharedCredentials.some(
+					(psc) => psc.credentialsId === credentialId && psc.role === 'credential:owner',
+				),
+		);
 
-		const newSharedCredentials = projects
-			// We filter by role === 'project:personalOwner' above and there should
-			// always only be one owner.
-			.map((project) =>
-				this.sharedCredentialsRepository.create({
-					credentialsId: credential.id,
-					role: 'credential:user',
-					projectId: project.id,
-				}),
-			);
+		const newSharedCredentials = projects.map((project) =>
+			this.sharedCredentialsRepository.create({
+				credentialsId: credentialId,
+				role: 'credential:user',
+				projectId: project.id,
+			}),
+		);
 
 		return await em.save(newSharedCredentials);
 	}
@@ -54,7 +81,7 @@ export class EnterpriseCredentialsService {
 		credential = includeDecryptedData
 			? // Try to get the credential with `credential:update` scope, which
 				// are required for decrypting the data.
-				await this.sharedCredentialsRepository.findCredentialForUser(
+				await this.credentialsFinderService.findCredentialForUser(
 					credentialId,
 					user,
 					// TODO: replace credential:update with credential:decrypt once it lands
@@ -66,18 +93,13 @@ export class EnterpriseCredentialsService {
 		if (credential) {
 			// Decrypt the data if we found the credential with the `credential:update`
 			// scope.
-			decryptedData = this.credentialsService.redact(
-				this.credentialsService.decrypt(credential),
-				credential,
-			);
+			decryptedData = this.credentialsService.decrypt(credential);
 		} else {
 			// Otherwise try to find them with only the `credential:read` scope. In
 			// that case we return them without the decrypted data.
-			credential = await this.sharedCredentialsRepository.findCredentialForUser(
-				credentialId,
-				user,
-				['credential:read'],
-			);
+			credential = await this.credentialsFinderService.findCredentialForUser(credentialId, user, [
+				'credential:read',
+			]);
 		}
 
 		if (!credential) {
@@ -91,6 +113,11 @@ export class EnterpriseCredentialsService {
 		const { data: _, ...rest } = credential;
 
 		if (decryptedData) {
+			// We never want to expose the oauthTokenData to the frontend, but it
+			// expects it to check if the credential is already connected.
+			if (decryptedData?.oauthTokenData) {
+				decryptedData.oauthTokenData = true;
+			}
 			return { data: decryptedData, ...rest };
 		}
 
@@ -99,7 +126,7 @@ export class EnterpriseCredentialsService {
 
 	async transferOne(user: User, credentialId: string, destinationProjectId: string) {
 		// 1. get credential
-		const credential = await this.sharedCredentialsRepository.findCredentialForUser(
+		const credential = await this.credentialsFinderService.findCredentialForUser(
 			credentialId,
 			user,
 			['credential:move'],
@@ -135,14 +162,6 @@ export class EnterpriseCredentialsService {
 			throw new TransferCredentialError(
 				"You can't transfer a credential into the project that's already owning it.",
 			);
-		}
-		if (sourceProject.type !== 'team' && sourceProject.type !== 'personal') {
-			throw new TransferCredentialError(
-				'You can only transfer credentials out of personal or team projects.',
-			);
-		}
-		if (destinationProject.type !== 'team') {
-			throw new TransferCredentialError('You can only transfer credentials into team projects.');
 		}
 
 		await this.sharedCredentialsRepository.manager.transaction(async (trx) => {

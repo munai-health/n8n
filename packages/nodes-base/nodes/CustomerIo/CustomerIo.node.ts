@@ -5,11 +5,12 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
-import { customerIoApiRequest, validateJSON } from './GenericFunctions';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+
 import { campaignFields, campaignOperations } from './CampaignDescription';
 import { customerFields, customerOperations } from './CustomerDescription';
 import { eventFields, eventOperations } from './EventDescription';
+import { customerIoApiRequest, validateJSON } from './GenericFunctions';
 import { segmentFields, segmentOperations } from './SegmentDescription';
 
 export class CustomerIo implements INodeType {
@@ -24,8 +25,9 @@ export class CustomerIo implements INodeType {
 		defaults: {
 			name: 'Customer.io',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		usableAsTool: true,
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'customerIoApi',
@@ -335,7 +337,7 @@ export class CustomerIo implements INodeType {
 					returnData.push(responseData as unknown as IDataObject);
 				}
 			} catch (error) {
-				if (this.continueOnFail(error)) {
+				if (this.continueOnFail()) {
 					returnData.push({ error: error.message });
 					continue;
 				}

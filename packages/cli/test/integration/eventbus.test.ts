@@ -1,11 +1,12 @@
-import type { User } from '@db/entities/User';
-import { MessageEventBus } from '@/eventbus/MessageEventBus/MessageEventBus';
+import { mockInstance } from '@n8n/backend-test-utils';
+import type { User } from '@n8n/db';
+
+import { MessageEventBus } from '@/eventbus/message-event-bus/message-event-bus';
 import { ExecutionRecoveryService } from '@/executions/execution-recovery.service';
 
-import * as utils from './shared/utils/';
 import { createUser } from './shared/db/users';
-import { mockInstance } from '../shared/mocking';
 import type { SuperAgentTest } from './shared/types';
+import * as utils from './shared/utils/';
 
 /**
  * NOTE: due to issues with mocking the MessageEventBus in multiple tests running in parallel,

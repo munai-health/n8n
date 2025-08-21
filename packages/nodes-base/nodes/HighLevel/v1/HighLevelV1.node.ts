@@ -1,10 +1,10 @@
-/* eslint-disable n8n-nodes-base/node-filename-against-convention */
 import type {
 	INodeProperties,
 	INodeType,
 	INodeTypeBaseDescription,
 	INodeTypeDescription,
 } from 'n8n-workflow';
+import { NodeConnectionTypes } from 'n8n-workflow';
 
 import { contactFields, contactNotes, contactOperations } from './description/ContactDescription';
 import { opportunityFields, opportunityOperations } from './description/OpportunityDescription';
@@ -52,8 +52,8 @@ const versionDescription: INodeTypeDescription = {
 	defaults: {
 		name: 'HighLevel',
 	},
-	inputs: ['main'],
-	outputs: ['main'],
+	inputs: [NodeConnectionTypes.Main],
+	outputs: [NodeConnectionTypes.Main],
 	credentials: [
 		{
 			name: 'highLevelApi',

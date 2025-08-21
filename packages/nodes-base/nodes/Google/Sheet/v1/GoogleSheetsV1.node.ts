@@ -13,8 +13,7 @@ import type {
 } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 
-import { getGoogleAccessToken } from '../../GenericFunctions';
-import { generatePairedItemData } from '../../../../utils/utilities';
+import { googleApiRequest, hexToRgb } from './GenericFunctions';
 import type {
 	ILookupValues,
 	ISheetUpdateData,
@@ -23,10 +22,9 @@ import type {
 	ValueRenderOption,
 } from './GoogleSheet';
 import { GoogleSheet } from './GoogleSheet';
-
-import { googleApiRequest, hexToRgb } from './GenericFunctions';
-
 import { versionDescription } from './versionDescription';
+import { generatePairedItemData } from '../../../../utils/utilities';
+import { getGoogleAccessToken } from '../../GenericFunctions';
 
 export class GoogleSheetsV1 implements INodeType {
 	description: INodeTypeDescription;
@@ -144,7 +142,7 @@ export class GoogleSheetsV1 implements INodeType {
 
 					return [items];
 				} catch (error) {
-					if (this.continueOnFail(error)) {
+					if (this.continueOnFail()) {
 						return [[{ json: { error: error.message } }]];
 					}
 					throw error;
@@ -159,7 +157,7 @@ export class GoogleSheetsV1 implements INodeType {
 					const items = this.getInputData();
 					return [items];
 				} catch (error) {
-					if (this.continueOnFail(error)) {
+					if (this.continueOnFail()) {
 						return [[{ json: { error: error.message } }]];
 					}
 					throw error;
@@ -201,7 +199,7 @@ export class GoogleSheetsV1 implements INodeType {
 						}
 						returnData.push(responseData as IDataObject);
 					} catch (error) {
-						if (this.continueOnFail(error)) {
+						if (this.continueOnFail()) {
 							returnData.push({ error: error.message });
 							continue;
 						}
@@ -226,7 +224,7 @@ export class GoogleSheetsV1 implements INodeType {
 
 					for (const propertyName of Object.keys(deletePropertyToDimensions)) {
 						if (toDelete[propertyName] !== undefined) {
-							toDelete[propertyName]!.forEach((entry) => {
+							toDelete[propertyName].forEach((entry) => {
 								requests.push({
 									deleteDimension: {
 										range: {
@@ -248,7 +246,7 @@ export class GoogleSheetsV1 implements INodeType {
 					const items = this.getInputData();
 					return [items];
 				} catch (error) {
-					if (this.continueOnFail(error)) {
+					if (this.continueOnFail()) {
 						return [[{ json: { error: error.message } }]];
 					}
 					throw error;
@@ -307,7 +305,7 @@ export class GoogleSheetsV1 implements INodeType {
 
 					return [lookupOutput];
 				} catch (error) {
-					if (this.continueOnFail(error)) {
+					if (this.continueOnFail()) {
 						return [this.helpers.returnJsonArray({ error: error.message })];
 					}
 					throw error;
@@ -344,7 +342,7 @@ export class GoogleSheetsV1 implements INodeType {
 
 					return [this.helpers.returnJsonArray(returnData)];
 				} catch (error) {
-					if (this.continueOnFail(error)) {
+					if (this.continueOnFail()) {
 						return [this.helpers.returnJsonArray({ error: error.message })];
 					}
 					throw error;
@@ -375,7 +373,7 @@ export class GoogleSheetsV1 implements INodeType {
 						delete responseData.replies;
 						returnData.push(responseData as IDataObject);
 					} catch (error) {
-						if (this.continueOnFail(error)) {
+						if (this.continueOnFail()) {
 							returnData.push({ error: error.message });
 							continue;
 						}
@@ -432,7 +430,7 @@ export class GoogleSheetsV1 implements INodeType {
 
 					return [items];
 				} catch (error) {
-					if (this.continueOnFail(error)) {
+					if (this.continueOnFail()) {
 						return [[{ json: { error: error.message } }]];
 					}
 					throw error;
@@ -488,7 +486,7 @@ export class GoogleSheetsV1 implements INodeType {
 
 						returnData.push(responseData as IDataObject);
 					} catch (error) {
-						if (this.continueOnFail(error)) {
+						if (this.continueOnFail()) {
 							returnData.push({ error: error.message });
 							continue;
 						}

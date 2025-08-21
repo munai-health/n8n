@@ -1,47 +1,61 @@
-import EventEmitter from 'node:events';
-
-import Container, { Service } from 'typedi';
+import { GlobalConfig } from '@n8n/config';
+import { Time } from '@n8n/constants';
+import { Container, Service } from '@n8n/di';
 import { caching } from 'cache-manager';
-import { ApplicationError, jsonStringify } from 'n8n-workflow';
+import { jsonStringify, UserError } from 'n8n-workflow';
 
 import config from '@/config';
-import { UncacheableValueError } from '@/errors/cache-errors/uncacheable-value.error';
 import { MalformedRefreshValueError } from '@/errors/cache-errors/malformed-refresh-value.error';
+import { UncacheableValueError } from '@/errors/cache-errors/uncacheable-value.error';
 import type {
 	TaggedRedisCache,
 	TaggedMemoryCache,
-	CacheEvent,
 	MaybeHash,
 	Hash,
 } from '@/services/cache/cache.types';
-import { TIME } from '@/constants';
+import { TypedEmitter } from '@/typed-emitter';
+
+type CacheEvents = {
+	'metrics.cache.hit': never;
+	'metrics.cache.miss': never;
+	'metrics.cache.update': never;
+};
 
 @Service()
-export class CacheService extends EventEmitter {
+export class CacheService extends TypedEmitter<CacheEvents> {
+	constructor(private readonly globalConfig: GlobalConfig) {
+		super();
+	}
+
 	private cache: TaggedRedisCache | TaggedMemoryCache;
 
 	async init() {
-		const backend = config.getEnv('cache.backend');
+		const { backend } = this.globalConfig.cache;
 		const mode = config.getEnv('executions.mode');
-		const ttl = config.getEnv('cache.redis.ttl');
 
 		const useRedis = backend === 'redis' || (backend === 'auto' && mode === 'queue');
 
 		if (useRedis) {
-			const { RedisClientService } = await import('../redis/redis-client.service');
+			const { RedisClientService } = await import('../redis-client.service');
 			const redisClientService = Container.get(RedisClientService);
 
-			const prefixBase = config.getEnv('redis.prefix');
-			const cachePrefix = config.getEnv('cache.redis.prefix');
-			const prefix = redisClientService.toValidPrefix(`${prefixBase}:${cachePrefix}:`);
+			const prefixBase = this.globalConfig.redis.prefix;
+			const cachePrefix = this.globalConfig.cache.redis.prefix;
+
+			// For cluster mode, we need to ensure proper hash tagging: {n8n:cache}:
+			// instead of {n8n:cache:} to keep the colon outside the hash tag
+			const hashTagPart = `${prefixBase}:${cachePrefix}`;
+			const prefix = redisClientService.toValidPrefix(hashTagPart) + ':';
 
 			const redisClient = redisClientService.createClient({
-				type: 'client(cache)',
+				type: 'cache(n8n)',
 				extraOptions: { keyPrefix: prefix },
 			});
 
 			const { redisStoreUsingClient } = await import('@/services/cache/redis.cache-manager');
-			const redisStore = redisStoreUsingClient(redisClient, { ttl });
+			const redisStore = redisStoreUsingClient(redisClient, {
+				ttl: this.globalConfig.cache.redis.ttl,
+			});
 
 			const redisCache = await caching(redisStore);
 
@@ -50,7 +64,7 @@ export class CacheService extends EventEmitter {
 			return;
 		}
 
-		const maxSize = config.getEnv('cache.memory.maxSize');
+		const { maxSize, ttl } = this.globalConfig.cache.memory;
 
 		const sizeCalculation = (item: unknown) => {
 			const str = jsonStringify(item, { replaceCircularRefs: true });
@@ -66,10 +80,6 @@ export class CacheService extends EventEmitter {
 		await this.cache.store.reset();
 	}
 
-	emit(event: CacheEvent, ...args: unknown[]) {
-		return super.emit(event, ...args);
-	}
-
 	isRedis() {
 		return this.cache.kind === 'redis';
 	}
@@ -82,6 +92,9 @@ export class CacheService extends EventEmitter {
 	//             storing
 	// ----------------------------------
 
+	/**
+	 * @param ttl Time to live in milliseconds
+	 */
 	async set(key: string, value: unknown, ttl?: number) {
 		if (!this.cache) await this.init();
 
@@ -145,12 +158,10 @@ export class CacheService extends EventEmitter {
 		if (!key?.length) return;
 
 		if (this.cache.kind === 'memory') {
-			throw new ApplicationError('Method `expire` not yet implemented for in-memory cache', {
-				level: 'warning',
-			});
+			throw new UserError('Method `expire` not yet implemented for in-memory cache');
 		}
 
-		await this.cache.store.expire(key, ttlMs / TIME.SECOND);
+		await this.cache.store.expire(key, ttlMs * Time.milliseconds.toSeconds);
 	}
 
 	// ----------------------------------

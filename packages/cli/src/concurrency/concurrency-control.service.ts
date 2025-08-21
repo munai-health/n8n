@@ -1,24 +1,30 @@
-import { Logger } from '@/Logger';
-import config from '@/config';
-import { Service } from 'typedi';
-import { ConcurrencyQueue } from './concurrency-queue';
-import { UnknownExecutionModeError } from '@/errors/unknown-execution-mode.error';
-import { InvalidConcurrencyLimitError } from '@/errors/invalid-concurrency-limit.error';
-import { ExecutionRepository } from '@/databases/repositories/execution.repository';
+import { Logger } from '@n8n/backend-common';
+import { GlobalConfig } from '@n8n/config';
+import { ExecutionRepository } from '@n8n/db';
+import { Service } from '@n8n/di';
+import capitalize from 'lodash/capitalize';
 import type { WorkflowExecuteMode as ExecutionMode } from 'n8n-workflow';
-import type { IExecutingWorkflowData } from '@/Interfaces';
+
+import config from '@/config';
+import { InvalidConcurrencyLimitError } from '@/errors/invalid-concurrency-limit.error';
+import { UnknownExecutionModeError } from '@/errors/unknown-execution-mode.error';
+import { EventService } from '@/events/event.service';
 import { Telemetry } from '@/telemetry';
+
+import { ConcurrencyQueue } from './concurrency-queue';
 
 export const CLOUD_TEMP_PRODUCTION_LIMIT = 999;
 export const CLOUD_TEMP_REPORTABLE_THRESHOLDS = [5, 10, 20, 50, 100, 200];
 
+export type ConcurrencyQueueType = 'production' | 'evaluation';
+
 @Service()
 export class ConcurrencyControlService {
-	private readonly isEnabled: boolean;
+	private isEnabled: boolean;
 
-	private readonly productionLimit: number;
+	private readonly limits: Map<ConcurrencyQueueType, number>;
 
-	private readonly productionQueue: ConcurrencyQueue;
+	private readonly queues: Map<ConcurrencyQueueType, ConcurrencyQueue>;
 
 	private readonly limitsToReport = CLOUD_TEMP_REPORTABLE_THRESHOLDS.map(
 		(t) => CLOUD_TEMP_PRODUCTION_LIMIT - t,
@@ -28,45 +34,81 @@ export class ConcurrencyControlService {
 		private readonly logger: Logger,
 		private readonly executionRepository: ExecutionRepository,
 		private readonly telemetry: Telemetry,
+		private readonly eventService: EventService,
+		private readonly globalConfig: GlobalConfig,
 	) {
-		this.productionLimit = config.getEnv('executions.concurrency.productionLimit');
+		this.logger = this.logger.scoped('concurrency');
 
-		if (this.productionLimit === 0) {
-			throw new InvalidConcurrencyLimitError(this.productionLimit);
-		}
+		const { productionLimit, evaluationLimit } = this.globalConfig.executions.concurrency;
 
-		if (this.productionLimit < -1) {
-			this.productionLimit = -1;
-		}
+		this.limits = new Map([
+			['production', productionLimit],
+			['evaluation', evaluationLimit],
+		]);
 
-		if (this.productionLimit === -1 || config.getEnv('executions.mode') === 'queue') {
+		this.limits.forEach((limit, type) => {
+			if (limit === 0) {
+				throw new InvalidConcurrencyLimitError(limit);
+			}
+
+			if (limit < -1) {
+				this.limits.set(type, -1);
+			}
+		});
+
+		if (
+			Array.from(this.limits.values()).every((limit) => limit === -1) ||
+			config.getEnv('executions.mode') === 'queue'
+		) {
 			this.isEnabled = false;
-			this.log('Service disabled');
 			return;
 		}
 
-		this.productionQueue = new ConcurrencyQueue(this.productionLimit);
+		this.queues = new Map();
+		this.limits.forEach((limit, type) => {
+			if (limit > 0) {
+				this.queues.set(type, new ConcurrencyQueue(limit));
+			}
+		});
 
 		this.logInit();
 
 		this.isEnabled = true;
 
-		this.productionQueue.on('concurrency-check', ({ capacity }: { capacity: number }) => {
-			if (this.shouldReport(capacity)) {
-				void this.telemetry.track('User hit concurrency limit', {
-					threshold: CLOUD_TEMP_PRODUCTION_LIMIT - capacity,
-				});
+		this.queues.forEach((queue, type) => {
+			queue.on('concurrency-check', ({ capacity }) => {
+				if (this.shouldReport(capacity)) {
+					this.telemetry.track('User hit concurrency limit', {
+						threshold: CLOUD_TEMP_PRODUCTION_LIMIT - capacity,
+						concurrencyQueue: type,
+					});
+				}
+			});
+
+			queue.on('execution-throttled', ({ executionId }) => {
+				this.logger.debug('Execution throttled', { executionId, type });
+				this.eventService.emit('execution-throttled', { executionId, type });
+			});
+
+			queue.on('execution-released', (executionId) => {
+				this.logger.debug('Execution released', { executionId, type });
+			});
+		});
+	}
+
+	/**
+	 * Check whether an execution is in any of the queues.
+	 */
+	has(executionId: string) {
+		if (!this.isEnabled) return false;
+
+		for (const queue of this.queues.values()) {
+			if (queue.has(executionId)) {
+				return true;
 			}
-		});
+		}
 
-		this.productionQueue.on('execution-throttled', ({ executionId }: { executionId: string }) => {
-			this.log('Execution throttled', { executionId });
-		});
-
-		this.productionQueue.on('execution-released', async (executionId: string) => {
-			this.log('Execution released', { executionId });
-			await this.executionRepository.resetStartedAt(executionId);
-		});
+		return false;
 	}
 
 	/**
@@ -75,16 +117,16 @@ export class ConcurrencyControlService {
 	async throttle({ mode, executionId }: { mode: ExecutionMode; executionId: string }) {
 		if (!this.isEnabled || this.isUnlimited(mode)) return;
 
-		await this.productionQueue.enqueue(executionId);
+		await this.getQueue(mode)?.enqueue(executionId);
 	}
 
 	/**
-	 * Release capacity back so the next execution in the production queue can proceed.
+	 * Release capacity back so the next execution in the queue can proceed.
 	 */
 	release({ mode }: { mode: ExecutionMode }) {
 		if (!this.isEnabled || this.isUnlimited(mode)) return;
 
-		this.productionQueue.dequeue();
+		this.getQueue(mode)?.dequeue();
 	}
 
 	/**
@@ -93,7 +135,7 @@ export class ConcurrencyControlService {
 	remove({ mode, executionId }: { mode: ExecutionMode; executionId: string }) {
 		if (!this.isEnabled || this.isUnlimited(mode)) return;
 
-		this.productionQueue.remove(executionId);
+		this.getQueue(mode)?.remove(executionId);
 	}
 
 	/**
@@ -101,24 +143,28 @@ export class ConcurrencyControlService {
 	 * enqueued executions that have response promises, as these cannot
 	 * be re-run via `Start.runEnqueuedExecutions` during startup.
 	 */
-	async removeAll(activeExecutions: { [executionId: string]: IExecutingWorkflowData }) {
+	async removeAll(executionIdsToCancel: string[]) {
 		if (!this.isEnabled) return;
 
-		const enqueuedProductionIds = this.productionQueue.getAll();
+		this.queues.forEach((queue) => {
+			const enqueuedExecutionIds = queue.getAll();
 
-		for (const id of enqueuedProductionIds) {
-			this.productionQueue.remove(id);
-		}
+			for (const id of enqueuedExecutionIds) {
+				queue.remove(id);
+			}
+		});
 
-		const executionIds = Object.entries(activeExecutions)
-			.filter(([_, execution]) => execution.status === 'new' && execution.responsePromise)
-			.map(([executionId, _]) => executionId);
+		if (executionIdsToCancel.length === 0) return;
 
-		if (executionIds.length === 0) return;
+		await this.executionRepository.cancelMany(executionIdsToCancel);
 
-		await this.executionRepository.cancelMany(executionIds);
+		this.logger.info('Canceled enqueued executions with response promises', {
+			executionIds: executionIdsToCancel,
+		});
+	}
 
-		this.logger.info('Canceled enqueued executions with response promises', { executionIds });
+	disable() {
+		this.isEnabled = false;
 	}
 
 	// ----------------------------------
@@ -126,17 +172,30 @@ export class ConcurrencyControlService {
 	// ----------------------------------
 
 	private logInit() {
-		this.log('Enabled');
+		this.logger.debug('Enabled');
 
-		this.log(
-			[
-				'Production execution concurrency is',
-				this.productionLimit === -1 ? 'unlimited' : 'limited to ' + this.productionLimit.toString(),
-			].join(' '),
-		);
+		this.limits.forEach((limit, type) => {
+			this.logger.debug(
+				[
+					`${capitalize(type)} execution concurrency is`,
+					limit === -1 ? 'unlimited' : 'limited to ' + limit.toString(),
+				].join(' '),
+			);
+		});
 	}
 
 	private isUnlimited(mode: ExecutionMode) {
+		return this.getQueue(mode) === undefined;
+	}
+
+	private shouldReport(capacity: number) {
+		return this.globalConfig.deployment.type === 'cloud' && this.limitsToReport.includes(capacity);
+	}
+
+	/**
+	 * Get the concurrency queue based on the execution mode.
+	 */
+	private getQueue(mode: ExecutionMode) {
 		if (
 			mode === 'error' ||
 			mode === 'integrated' ||
@@ -145,19 +204,13 @@ export class ConcurrencyControlService {
 			mode === 'manual' ||
 			mode === 'retry'
 		) {
-			return true;
+			return undefined;
 		}
 
-		if (mode === 'webhook' || mode === 'trigger') return this.productionLimit === -1;
+		if (mode === 'webhook' || mode === 'trigger') return this.queues.get('production');
+
+		if (mode === 'evaluation') return this.queues.get('evaluation');
 
 		throw new UnknownExecutionModeError(mode);
-	}
-
-	private log(message: string, meta?: object) {
-		this.logger.debug(['[Concurrency Control]', message].join(' '), meta);
-	}
-
-	private shouldReport(capacity: number) {
-		return config.getEnv('deployment.type') === 'cloud' && this.limitsToReport.includes(capacity);
 	}
 }
